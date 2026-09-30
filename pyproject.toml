@@ -1,0 +1,33 @@
+[project]
+name = "jevrake"
+version = "0.1.0"
+description = "Selector-free web scraping powered by TypeSafe AI's Jev"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["pydantic>=2", "httpx", "selectolax", "typesafe-sdk"]
+
+[project.scripts]
+jevrake = "jevrake.cli:main"
+
+[build-system]
+requires = ["uv_build"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = ["pytest", "ruff"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ASYNC", "PT"]
+# Full-width punctuation is normal in Japanese messages.
+allowed-confusables = ["（", "）", "：", "，"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use full-width digits on purpose (Japanese price / date inputs).
+"tests/**" = ["RUF001"]
+
+[tool.pytest.ini_options]
+markers = ["live: 実際のJev APIを呼ぶテスト"]
