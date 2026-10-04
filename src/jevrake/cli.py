@@ -85,12 +85,8 @@ def _run(args: argparse.Namespace) -> int:
         if client is not None:
             client.close()
 
-    succeeded = [r for r in results if not r.errors]
-    failed = [r for r in results if r.errors]
-    for result in failed:
-        for error in result.errors:
-            print(f"[error] {result.url}: {error}", file=sys.stderr)
     if not args.dry_run:
+        succeeded = [r for r in results if not r.errors]
         text = json.dumps(
             [r.model_dump(mode="json", exclude={"errors"}) for r in succeeded],
             ensure_ascii=False,
@@ -100,6 +96,12 @@ def _run(args: argparse.Namespace) -> int:
             print(text)
         else:
             args.output.write_text(text + "\n", encoding="utf-8")
+
+    failed = [r for r in results if r.errors]
+    for result in failed:
+        for error in result.errors:
+            print(f"[error] {result.url}: {error}", file=sys.stderr)
+
     return EXIT_PARTIAL if failed else EXIT_OK
 
 
