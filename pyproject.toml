@@ -28,6 +28,3 @@ allowed-confusables = ["（", "）", "：", "，"]
 [tool.ruff.lint.per-file-ignores]
 # Tests use full-width digits on purpose (Japanese price / date inputs).
 "tests/**" = ["RUF001"]
-
-[tool.pytest.ini_options]
-markers = ["live: 実際のJev APIを呼ぶテスト"]
