@@ -90,7 +90,6 @@ async def _run(args: argparse.Namespace) -> int:
             on_request=_print_dry_run if args.dry_run else None,
         )
 
-    # A page with any error is left out of the output; its errors go to stderr only.
     succeeded = [r for r in results if not r.errors]
     failed = [r for r in results if r.errors]
     for result in failed:
