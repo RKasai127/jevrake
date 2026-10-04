@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 import sys
 from collections.abc import Sequence
-from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
 
 from ._internal import api
-from ._internal.client import JevAuthError, JevClient, TypeSafeJevClient
+from ._internal.client import JevAuthError, TypeSafeJevClient
 from ._internal.fetch import DEFAULT_DELAY, HttpxFetcher
 from ._internal.schema import SchemaError, build_model_from_cli_fields
 from ._internal.version import VERSION
@@ -65,30 +63,27 @@ def _print_dry_run(url: str, payload: dict[str, Any]) -> None:
     print(json.dumps({"url": url, "request": payload}, ensure_ascii=False, indent=2))
 
 
-async def _run(args: argparse.Namespace) -> int:
+def _run(args: argparse.Namespace) -> int:
     if not 0 <= args.min_confidence <= 1:
         raise SchemaError("--min-confidence must be between 0 and 1")
 
     model = build_model_from_cli_fields(args.field)
 
-    async with AsyncExitStack() as stack:
-        client: JevClient | None = None
-        if not args.dry_run:
-            jev_client = TypeSafeJevClient()
-            stack.push_async_callback(jev_client.aclose)
-            client = jev_client
-
-        fetcher = await stack.enter_async_context(HttpxFetcher(delay=args.delay))
-
-        results = await api.arake_many(
-            args.urls,
-            model,
-            min_confidence=args.min_confidence,
-            fetcher=fetcher,
-            client=client,
-            dry_run=args.dry_run,
-            on_request=_print_dry_run if args.dry_run else None,
-        )
+    client = None if args.dry_run else TypeSafeJevClient()
+    try:
+        with HttpxFetcher(delay=args.delay) as fetcher:
+            results = api.rake_many(
+                args.urls,
+                model,
+                min_confidence=args.min_confidence,
+                fetcher=fetcher,
+                client=client,
+                dry_run=args.dry_run,
+                on_request=_print_dry_run if args.dry_run else None,
+            )
+    finally:
+        if client is not None:
+            client.close()
 
     succeeded = [r for r in results if not r.errors]
     failed = [r for r in results if r.errors]
@@ -111,7 +106,7 @@ async def _run(args: argparse.Namespace) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
-        return asyncio.run(_run(args))
+        return _run(args)
     except SchemaError as e:
         print(f"error: {e}", file=sys.stderr)
         return EXIT_INPUT
