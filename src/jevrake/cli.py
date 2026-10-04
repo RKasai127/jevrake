@@ -72,7 +72,7 @@ def _run(args: argparse.Namespace) -> int:
     client = None if args.dry_run else TypeSafeJevClient()
     try:
         with HttpxFetcher(delay=args.delay) as fetcher:
-            results = api.rake_many(
+            results = api.rake(
                 args.urls,
                 model,
                 min_confidence=args.min_confidence,
