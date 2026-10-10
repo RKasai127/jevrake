@@ -1,4 +1,4 @@
-"""Data models shared across the internal modules."""
+"""Data passed between the steps of ``rake()``, and the results returned to users."""
 
 from __future__ import annotations
 
@@ -22,8 +22,17 @@ class ExtractionTarget(BaseModel):
     required: bool = True
 
     @property
-    def optional(self) -> bool:
+    def is_optional(self) -> bool:
         return self.nullable or not self.required
+
+
+class TargetDefinition(BaseModel):
+    """One entry of the CLI ``--fields`` JSON."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    description: str | None = None
+    type: ExtractionKind = "str"
 
 
 class TextElement(BaseModel):

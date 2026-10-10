@@ -1,4 +1,8 @@
-"""Command-line interface."""
+"""The ``jevrake`` command.
+
+Reads URLs and ``--fields``, calls ``rake()``, and prints the pages that were fully extracted as
+JSON. Errors are printed to stderr.
+"""
 
 from __future__ import annotations
 
@@ -10,9 +14,10 @@ from pathlib import Path
 from typing import Any
 
 from ._internal import api
-from ._internal.client import JevAuthError, TypeSafeJevClient
+from ._internal.client import TypeSafeJevClient
+from ._internal.exceptions import JevAuthError, SchemaError
 from ._internal.fetch import DEFAULT_DELAY, HttpxFetcher
-from ._internal.schema import SchemaError, build_model_from_cli_fields
+from ._internal.schema import build_model_from_fields_json
 from ._internal.version import VERSION
 
 EXIT_OK = 0
@@ -29,11 +34,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("urls", nargs="+", metavar="URL")
     parser.add_argument(
         "-f",
-        "--field",
-        action="append",
+        "--fields",
         required=True,
-        metavar="FIELD",
-        help="field to extract as name:description[:type] (type defaults to str)",
+        metavar="JSON",
+        help='fields to extract as a JSON object, e.g. \'{"title": "Product name", '
+        '"price": {"description": "Price", "type": "int"}}\' (type defaults to str)',
     )
     parser.add_argument(
         "-o", "--output", type=Path, metavar="FILE", help="write JSON to FILE instead of stdout"
@@ -63,25 +68,26 @@ def _print_dry_run(url: str, payload: dict[str, Any]) -> None:
     print(json.dumps({"url": url, "request": payload}, ensure_ascii=False, indent=2))
 
 
-def _run(args: argparse.Namespace) -> int:
+def _run_command(args: argparse.Namespace) -> int:
     if not 0 <= args.min_confidence <= 1:
         raise SchemaError("--min-confidence must be between 0 and 1")
 
-    model = build_model_from_cli_fields(args.field)
+    model = build_model_from_fields_json(args.fields)
 
     client = None if args.dry_run else TypeSafeJevClient()
+    fetcher = HttpxFetcher(delay=args.delay)
     try:
-        with HttpxFetcher(delay=args.delay) as fetcher:
-            results = api.rake(
-                args.urls,
-                model,
-                min_confidence=args.min_confidence,
-                fetcher=fetcher,
-                client=client,
-                dry_run=args.dry_run,
-                on_request=_print_dry_run if args.dry_run else None,
-            )
+        results = api.rake(
+            args.urls,
+            model,
+            min_confidence=args.min_confidence,
+            fetcher=fetcher,
+            client=client,
+            dry_run=args.dry_run,
+            on_request=_print_dry_run if args.dry_run else None,
+        )
     finally:
+        fetcher.close()
         if client is not None:
             client.close()
 
@@ -108,7 +114,7 @@ def _run(args: argparse.Namespace) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     try:
-        return _run(args)
+        return _run_command(args)
     except SchemaError as e:
         print(f"error: {e}", file=sys.stderr)
         return EXIT_INPUT
