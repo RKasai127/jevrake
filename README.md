@@ -2,6 +2,30 @@
 
 <h3 align="center"><em>jevrake extracts typed values from web pages without CSS selectors, using TypeSafe AI's Jev.</em></h3>
 
+Example on [books.toscrape.com](https://books.toscrape.com/), a site made for scraping practice:
+
+```sh
+jevrake https://books.toscrape.com/ --fields '{"title": "Book title", "price": {"description": "Price", "type": "decimal"}, "availability": "Availability"}'
+```
+
+Output (1 of the 20 books on the page):
+
+```json
+{
+  "url": "https://books.toscrape.com/",
+  "data": {
+    "title": "A Light in the ...",
+    "price": "51.77",
+    "availability": "In stock"
+  },
+  "fields": {
+    "title": {"value": "A Light in the ...", "confidence": 1.0, "probability": 1.0, "source": "A Light in the ..."},
+    "price": {"value": "51.77", "confidence": 0.98, "probability": 0.99, "source": "£51.77"},
+    "availability": {"value": "In stock", "confidence": 1.0, "probability": 1.0, "source": "In stock"}
+  }
+}
+```
+
 ## Install
 
 ```sh
