@@ -217,7 +217,8 @@ def test_list_page_questions_are_numbered_per_item() -> None:
     assert list(request.questions) == ["item0.name", "item1.name"]
     question = request.questions["item1.name"]
     assert question.instructions == (
-        'Which option is "店名"? Choose the option that represents the name of item 1 on this page.'
+        'Which option is "店名"? All options come from one item of a list on this page; '
+        "choose the option that represents the name of that item."
     )
     assert question.criteria["c0"] == '"B店"'
 

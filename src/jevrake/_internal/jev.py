@@ -28,9 +28,10 @@ MAX_DESCRIPTION_TEXT = 200
 CHOICE_INSTRUCTIONS = (
     'Which option is "{description}"? Choose the option that represents the {name} of this page.'
 )
+
 ITEM_CHOICE_INSTRUCTIONS = (
-    'Which option is "{description}"? '
-    "Choose the option that represents the {name} of item {item} on this page."
+    'Which option is "{description}"? All options come from one item of a list on this page; '
+    "choose the option that represents the {name} of that item."
 )
 
 
