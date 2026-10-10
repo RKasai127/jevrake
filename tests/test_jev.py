@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 from typesafe_sdk import Choice
 
-from jevrake._internal.candidates import generate_candidates
+from jevrake._internal.collect import generate_candidates
 from jevrake._internal.dom import parse_page
 from jevrake._internal.jev import (
     MAX_CHOICES,

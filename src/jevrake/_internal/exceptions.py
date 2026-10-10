@@ -6,7 +6,7 @@ class SchemaError(ValueError):
 
 
 class CoercionError(ValueError):
-    """Candidate text cannot be converted to the field's type."""
+    """Candidate text cannot be converted to the target's type."""
 
 
 class FetchError(Exception):
