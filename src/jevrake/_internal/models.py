@@ -54,6 +54,18 @@ class ParsedPage(BaseModel):
     og_title: str | None
     main_text: str
     elements: list[TextElement]
+    # Places where the same kind of block repeats (e.g. 20 ``<li class="shop">``).
+    # Each group is a list of blocks, and each block is the elements inside it.
+    repeated_groups: list[list[list[TextElement]]] = []
+
+
+class ItemBlock(BaseModel):
+    """The part of a page that holds one record: the whole page, or one item of a list page."""
+
+    model_config = ConfigDict(frozen=True)
+
+    elements: list[TextElement]
+    is_whole_page: bool
 
 
 class ExtractionCandidate(BaseModel):
@@ -104,9 +116,17 @@ class ExtractionOutcome(BaseModel):
     errors: list[str]
 
 
-class RakeResult[T: BaseModel](BaseModel):
-    url: str
-    data: T | None
+class RakeItem[T: BaseModel](BaseModel):
+    """One record found on a page."""
+
+    data: T
     fields: dict[str, ExtractedValue]
-    request_id: str | None
+
+
+class RakeResult[T: BaseModel](BaseModel):
+    """All records found on one page."""
+
+    url: str
+    items: list[RakeItem[T]]
+    request_ids: list[str]
     errors: list[str]

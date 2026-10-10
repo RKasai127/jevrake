@@ -16,6 +16,7 @@ from jevrake._internal.jev import (
 from jevrake._internal.models import (
     ExtractionCandidate,
     ExtractionTarget,
+    ItemBlock,
     JevChoiceAnswer,
     JevResponse,
     ParsedPage,
@@ -37,7 +38,8 @@ def _page_and_candidates(
     fixture: str = "ja_product.html",
 ) -> tuple[ParsedPage, dict[str, list[ExtractionCandidate]]]:
     page = parse_page(load_fixture(fixture))
-    return page, {s.name: generate_candidates(page, s) for s in TARGETS}
+    whole = ItemBlock(elements=page.elements, is_whole_page=True)
+    return page, {s.name: generate_candidates(page, whole, s) for s in TARGETS}
 
 
 def _response(**choices: tuple[str, float]) -> JevResponse:
@@ -55,7 +57,7 @@ def _response(**choices: tuple[str, float]) -> JevResponse:
 def test_state() -> None:
     page, found = _page_and_candidates()
 
-    request = build_jev_request(URL, page, TARGETS, found)
+    request = build_jev_request(URL, page, TARGETS, {None: found})
 
     assert request.state == {
         "url": URL,
@@ -67,7 +69,7 @@ def test_state() -> None:
 def test_choice_question_structure() -> None:
     page, found = _page_and_candidates()
 
-    request = build_jev_request(URL, page, TARGETS, found)
+    request = build_jev_request(URL, page, TARGETS, {None: found})
 
     price = request.questions["price"]
     assert isinstance(price, Choice)
@@ -85,7 +87,7 @@ def test_choice_question_structure() -> None:
 def test_page_text_is_not_in_instructions() -> None:
     page, found = _page_and_candidates()
 
-    request = build_jev_request(URL, page, TARGETS, found)
+    request = build_jev_request(URL, page, TARGETS, {None: found})
 
     for question in request.questions.values():
         instructions = question.instructions
@@ -98,7 +100,7 @@ def test_page_text_is_not_in_instructions() -> None:
 def test_fields_without_candidates_are_skipped() -> None:
     page, found = _page_and_candidates("empty_page.html")
 
-    request = build_jev_request(URL, page, TARGETS, found)
+    request = build_jev_request(URL, page, TARGETS, {None: found})
 
     assert request.skipped == ["price", "list_price"]
     assert set(request.questions) == {"title"}
@@ -108,7 +110,7 @@ def test_choices_capped_at_255() -> None:
     page = parse_page("<body><p>x</p></body>")
     candidates = [ExtractionCandidate(text=str(i), normalized_value=i) for i in range(400)]
 
-    request = build_jev_request(URL, page, [TARGETS[1]], {"price": candidates})
+    request = build_jev_request(URL, page, [TARGETS[1]], {None: {"price": candidates}})
 
     assert len(request.questions["price"].criteria) == MAX_CHOICES
 
@@ -123,7 +125,7 @@ def test_describe_candidate_truncates_long_text() -> None:
 
 def test_parse_jev_response_success() -> None:
     page, found = _page_and_candidates()
-    request = build_jev_request(URL, page, TARGETS, found)
+    request = build_jev_request(URL, page, TARGETS, {None: found})
     response = _response(title=("c1", 0.95), price=("c0", 0.88), list_price=("c1", 0.7))
 
     result = parse_jev_response(request, response, TARGETS, min_confidence=0.6)
@@ -141,7 +143,7 @@ def test_parse_jev_response_success() -> None:
 
 def test_parse_jev_response_discards_required_value_below_min_confidence() -> None:
     page, found = _page_and_candidates()
-    request = build_jev_request(URL, page, TARGETS, found)
+    request = build_jev_request(URL, page, TARGETS, {None: found})
     response = _response(title=("c1", 0.95), price=("c0", 0.5), list_price=("c1", 0.95))
 
     result = parse_jev_response(request, response, TARGETS, min_confidence=0.6)
@@ -154,7 +156,7 @@ def test_parse_jev_response_discards_required_value_below_min_confidence() -> No
 
 def test_parse_jev_response_discards_optional_value_below_min_confidence_without_error() -> None:
     page, found = _page_and_candidates()
-    request = build_jev_request(URL, page, TARGETS, found)
+    request = build_jev_request(URL, page, TARGETS, {None: found})
     response = _response(title=("c1", 0.95), price=("c0", 0.95), list_price=("c1", 0.5))
 
     result = parse_jev_response(request, response, TARGETS, min_confidence=0.6)
@@ -166,7 +168,7 @@ def test_parse_jev_response_discards_optional_value_below_min_confidence_without
 
 def test_parse_jev_response_none_for_required_is_error() -> None:
     page, found = _page_and_candidates()
-    request = build_jev_request(URL, page, TARGETS, found)
+    request = build_jev_request(URL, page, TARGETS, {None: found})
     response = _response(title=("c0", 0.9), price=(NONE_CHOICE, 0.9), list_price=(NONE_CHOICE, 0.9))
 
     result = parse_jev_response(request, response, TARGETS, min_confidence=0.6)
@@ -181,7 +183,7 @@ def test_parse_jev_response_nullable_required_field_gets_none() -> None:
         name="n", description="数量", kind="int", nullable=True, required=True
     )
     page = parse_page(load_fixture("empty_page.html"))
-    request = build_jev_request(URL, page, [target], {"n": []})
+    request = build_jev_request(URL, page, [target], {None: {"n": []}})
 
     result = parse_jev_response(request, JevResponse(), [target], 0.6)
 
@@ -191,9 +193,47 @@ def test_parse_jev_response_nullable_required_field_gets_none() -> None:
 
 def test_build_jev_payload() -> None:
     page, found = _page_and_candidates()
-    request = build_jev_request(URL, page, TARGETS, found)
+    request = build_jev_request(URL, page, TARGETS, {None: found})
 
     payload = build_jev_payload(request, "jev-latest")
 
     assert payload["model"] == "jev-latest"
     assert payload["questions"]["price"]["type"] == "choice"
+
+
+def test_list_page_questions_are_numbered_per_item() -> None:
+    page = parse_page("<body><p>x</p></body>")
+    shop_a = [ExtractionCandidate(text="A店", normalized_value="A店")]
+    shop_b = [ExtractionCandidate(text="B店", normalized_value="B店")]
+    target = ExtractionTarget(name="name", description="店名", kind="str")
+
+    candidates: dict[int | None, dict[str, list[ExtractionCandidate]]] = {
+        0: {"name": shop_a},
+        1: {"name": shop_b},
+    }
+
+    request = build_jev_request(URL, page, [target], candidates)
+
+    assert list(request.questions) == ["item0.name", "item1.name"]
+    question = request.questions["item1.name"]
+    assert question.instructions == (
+        'Which option is "店名"? Choose the option that represents the name of item 1 on this page.'
+    )
+    assert question.criteria["c0"] == '"B店"'
+
+
+def test_parse_jev_response_for_one_item() -> None:
+    page = parse_page("<body><p>x</p></body>")
+    target = ExtractionTarget(name="name", description="店名", kind="str")
+    candidates: dict[int | None, dict[str, list[ExtractionCandidate]]] = {
+        0: {"name": [ExtractionCandidate(text="A店", normalized_value="A店")]},
+        1: {"name": [ExtractionCandidate(text="B店", normalized_value="B店")]},
+    }
+    request = build_jev_request(URL, page, [target], candidates)
+    response = _response(**{"item0.name": ("c0", 0.95), "item1.name": ("__none__", 0.95)})
+
+    first = parse_jev_response(request, response, [target], 0.9, item=0)
+    second = parse_jev_response(request, response, [target], 0.9, item=1)
+
+    assert first.values == {"name": "A店"}
+    assert second.errors == ["name: no matching value (Jev chose __none__)"]

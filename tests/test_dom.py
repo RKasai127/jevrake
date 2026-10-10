@@ -73,3 +73,28 @@ def test_empty_document() -> None:
 
     assert page.elements == []
     assert page.main_text == ""
+
+
+def test_repeated_blocks_are_found() -> None:
+    html = load_fixture("shop_list.html")
+
+    page = parse_page(html)
+
+    shops = [g for g in page.repeated_groups if len(g) == 4]
+    assert len(shops) == 1
+    assert [block[0].text for block in shops[0]] == [
+        "アルファ新宿店",
+        "ベータ渋谷店",
+        "ガンマ池袋店",
+        "デルタ上野店",
+    ]
+    # The nested tag lists (<ul class="tags">) inside each shop are found too.
+    assert any([e.text for e in g[0]] == ["駐車場"] for g in page.repeated_groups)
+
+
+def test_fewer_than_three_blocks_are_not_repeated() -> None:
+    html = "<body><ul><li class=a><b>A</b>1</li><li class=a><b>B</b>2</li></ul></body>"
+
+    page = parse_page(html)
+
+    assert page.repeated_groups == []

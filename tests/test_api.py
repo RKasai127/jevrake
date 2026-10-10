@@ -39,11 +39,13 @@ def test_rake_japanese_product() -> None:
     result = rake([f"{BASE}/ja"], Product, fetcher=fetcher(), client=jev)[0]
 
     assert result.errors == []
-    assert result.data == Product(
+    assert len(result.items) == 1
+    item = result.items[0]
+    assert item.data == Product(
         title="ワイヤレスイヤホン X100", price=3980, list_price=Decimal("4980")
     )
-    assert result.request_id == "req-1"
-    assert result.fields["price"] == ExtractedValue(
+    assert result.request_ids == ["req-1"]
+    assert item.fields["price"] == ExtractedValue(
         value=3980, confidence=0.9, probability=0.9, source="¥3,980"
     )
     assert len(jev.calls) == 1
@@ -57,9 +59,8 @@ def test_values_below_min_confidence_are_discarded() -> None:
 
     result = rake([f"{BASE}/ja"], Product, fetcher=fetcher(), client=jev)[0]
 
-    assert result.data is None
+    assert result.items == []
     assert "price: confidence 0.30 is below 0.90 (rejected '¥3,980')" in result.errors
-    assert all(f.value is None for f in result.fields.values())
 
 
 def test_missing_required_value_gives_no_data() -> None:
@@ -67,10 +68,9 @@ def test_missing_required_value_gives_no_data() -> None:
 
     result = rake([f"{BASE}/empty"], Product, fetcher=fetcher(), client=jev)[0]
 
-    assert result.data is None
+    assert result.items == []
     assert "price: no candidates found on the page" in result.errors
     assert "title: no matching value (Jev chose __none__)" in result.errors
-    assert "list_price" in result.fields
 
 
 def test_fetch_errors_are_collected() -> None:
@@ -127,7 +127,7 @@ def test_other_jev_errors_are_per_page() -> None:
     result = rake([f"{BASE}/ja"], Product, fetcher=fetcher(), client=jev)[0]
 
     assert result.errors == ["boom"]
-    assert result.data is None
+    assert result.items == []
 
 
 def test_dry_run_does_not_call_jev() -> None:
@@ -148,3 +148,53 @@ def test_dry_run_does_not_call_jev() -> None:
     assert set(payload) == {"model", "state", "questions"}
     assert payload["model"] == "jev-latest"
     assert payload["questions"]["price"]["type"] == "choice"
+
+
+class Shop(BaseModel):
+    name: str = Field(description="店名")
+    address: str = Field(description="住所")
+    facilities: str | None = Field(default=None, description="設備")
+
+
+SHOP_PICKS = {
+    "name": "shop-name",
+    "address": "nearby label: 住所",
+    "facilities": "nearby label: 設備",
+}
+
+
+def test_list_page_returns_one_item_per_shop() -> None:
+    jev = FakeJev(SHOP_PICKS)
+
+    result = rake([f"{BASE}/shops"], Shop, fetcher=fetcher(), client=jev)[0]
+
+    assert [item.data.name for item in result.items] == [
+        "アルファ新宿店",
+        "ベータ渋谷店",
+        "デルタ上野店",
+    ]
+    assert result.items[0].data.address == "東京都新宿区西新宿1-1-1"
+    assert result.items[0].data.facilities == "駐車場あり・喫煙所あり"
+    # The shop without an address is dropped and reported.
+    assert result.errors == ["item 2: address: no matching value (Jev chose __none__)"]
+    assert len(jev.calls) == 1
+
+
+def test_large_list_page_is_sent_in_several_requests() -> None:
+    shops = "".join(
+        f'<li class="shop"><h3 class="shop-name">店舗{i}</h3><p>住所 東京都{i}</p></li>'
+        for i in range(25)
+    )
+    html = f"<html><body><ul>{shops}</ul></body></html>"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text=html, headers={"content-type": "text/html"})
+
+    f = HttpxFetcher(transport=httpx.MockTransport(handler), delay=0)
+    jev = FakeJev({"name": "shop-name", "address": "住所"})
+
+    result = rake([f"{BASE}/many"], Shop, fetcher=f, client=jev)[0]
+
+    assert [len(call["questions"]) for call in jev.calls] == [20 * 3, 5 * 3]
+    assert len(result.items) == 25
+    assert result.request_ids == ["req-1", "req-2"]

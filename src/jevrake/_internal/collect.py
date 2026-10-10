@@ -1,7 +1,8 @@
 """Collect possible values (candidates) for each target from the page.
 
-Text targets take titles and text elements; number targets take prices and other numbers.
-Candidates are de-duplicated and, if there are too many, only the highest-scoring ones are kept.
+A list page is split into item blocks (one per record); any other page is one block. Text targets
+take titles and text elements; number targets take prices and other numbers. Candidates are
+de-duplicated and, if there are too many, only the highest-scoring ones are kept.
 """
 
 from __future__ import annotations
@@ -13,11 +14,17 @@ from typing import Any
 
 from .convert import NUMBER_RE, convert_text, normalize_text
 from .exceptions import CoercionError
-from .models import ExtractionCandidate, ExtractionTarget, ParsedPage, TextElement
+from .models import ExtractionCandidate, ExtractionTarget, ItemBlock, ParsedPage, TextElement
 
 MAX_CANDIDATES = 254  # plus "__none__" = 255 choices
 MAX_TEXT_CHARS = 200
 _PREFIX_LABEL_CHARS = 20
+# A repeated group is used as the list of items only if it has at least this many items with a
+# candidate for every required target, and holds at least this share of the page text.
+MIN_LIST_ITEMS = 3
+MIN_LIST_TEXT_SHARE = 0.5
+# An item of a list has short values such as a name or a price; sections of an article do not.
+MAX_SHORT_TEXT_CHARS = 40
 
 
 def _format_tag(element: TextElement) -> str:
@@ -46,20 +53,20 @@ def _find_prefix_label(text: str, start: int) -> str | None:
     return None
 
 
-def _find_text_candidates(page: ParsedPage) -> Iterator[ExtractionCandidate]:
-    if page.title:
+def _find_text_candidates(page: ParsedPage, block: ItemBlock) -> Iterator[ExtractionCandidate]:
+    if block.is_whole_page and page.title:
         yield ExtractionCandidate(
             text=page.title,
             normalized_value=None,
             context={"tag": "<title>", "source": "page title"},
         )
-    if page.og_title:
+    if block.is_whole_page and page.og_title:
         yield ExtractionCandidate(
             text=page.og_title,
             normalized_value=None,
             context={"tag": "<meta og:title>", "source": "og:title"},
         )
-    for element in page.elements:
+    for element in block.elements:
         if 2 <= len(element.text) <= MAX_TEXT_CHARS:
             yield ExtractionCandidate(
                 text=element.text,
@@ -68,8 +75,8 @@ def _find_text_candidates(page: ParsedPage) -> Iterator[ExtractionCandidate]:
             )
 
 
-def _find_number_candidates(page: ParsedPage) -> Iterator[ExtractionCandidate]:
-    for element in page.elements:
+def _find_number_candidates(block: ItemBlock) -> Iterator[ExtractionCandidate]:
+    for element in block.elements:
         text = normalize_text(element.text)
         for m in NUMBER_RE.finditer(text):
             context = _build_context(element, _find_prefix_label(text, m.start()))
@@ -137,10 +144,14 @@ def keep_top_candidates(candidates: list[ExtractionCandidate]) -> list[Extractio
     return [candidates[i] for i in keep]
 
 
-def generate_candidates(page: ParsedPage, target: ExtractionTarget) -> list[ExtractionCandidate]:
+def generate_candidates(
+    page: ParsedPage, block: ItemBlock, target: ExtractionTarget
+) -> list[ExtractionCandidate]:
     converted: list[ExtractionCandidate] = []
     raw_candidates = (
-        _find_text_candidates(page) if target.kind == "str" else _find_number_candidates(page)
+        _find_text_candidates(page, block)
+        if target.kind == "str"
+        else _find_number_candidates(block)
     )
     for raw in raw_candidates:
         try:
@@ -156,3 +167,33 @@ def generate_candidates(page: ParsedPage, target: ExtractionTarget) -> list[Extr
         for c in unique
     ]
     return keep_top_candidates(scored)
+
+
+def _count_text(elements: list[TextElement]) -> int:
+    return sum(len(e.text) for e in elements)
+
+
+def find_item_blocks(page: ParsedPage, targets: list[ExtractionTarget]) -> list[ItemBlock]:
+    """Return one block per item on a list page, or the whole page as a single block.
+
+    Every block of the chosen group is returned, so an item that misses a value is reported later
+    instead of silently disappearing.
+    """
+    required = [t for t in targets if not t.is_optional]
+    page_text = _count_text(page.elements)
+    best: list[ItemBlock] = []
+    best_items = 0
+    for group in page.repeated_groups:
+        blocks = [ItemBlock(elements=elements, is_whole_page=False) for elements in group]
+        items = sum(
+            1
+            for block in blocks
+            if len(block.elements) >= 2
+            and any(len(e.text) <= MAX_SHORT_TEXT_CHARS for e in block.elements)
+            and all(generate_candidates(page, block, t) for t in required)
+        )
+        text_share = _count_text([e for b in blocks for e in b.elements]) / max(page_text, 1)
+        is_list = items >= MIN_LIST_ITEMS and text_share >= MIN_LIST_TEXT_SHARE
+        if is_list and items > best_items:
+            best, best_items = blocks, items
+    return best or [ItemBlock(elements=page.elements, is_whole_page=True)]

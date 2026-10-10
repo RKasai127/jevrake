@@ -1,7 +1,8 @@
 """Turn raw HTML into a ``ParsedPage``.
 
 Removes scripts, navigation, footers and hidden elements, then collects the page title, the main
-text, and each element that holds text together with its nearby label.
+text, and each element that holds text together with its nearby label. It also finds blocks that
+repeat (such as the items of a list page).
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ _BLOCK_TAGS = {
     "blockquote", "pre", "figure", "figcaption", "form", "label",
 }  # fmt: skip
 MAX_LABEL_CHARS = 30
+MIN_REPEATED_BLOCKS = 3
 
 
 def _is_element(node: Node | None) -> TypeGuard[Node]:
@@ -136,6 +138,21 @@ def _build_main_text(body: Node) -> str:
     return "\n".join(lines)[:MAX_MAIN_TEXT_CHARS]
 
 
+def _find_repeated_blocks(body: Node) -> list[list[Node]]:
+    """Find children of the same parent that share a tag and class, at least 3 of them."""
+    groups: list[list[Node]] = []
+    for parent in body.traverse():
+        if not _is_element(parent):
+            continue
+        by_shape: dict[tuple[str, str], list[Node]] = {}
+        for child in parent.iter():
+            if _is_element(child) and _get_full_text(child):
+                shape = (child.tag, child.attributes.get("class") or "")
+                by_shape.setdefault(shape, []).append(child)
+        groups.extend(b for b in by_shape.values() if len(b) >= MIN_REPEATED_BLOCKS)
+    return groups
+
+
 def parse_page(html: str) -> ParsedPage:
     raw = HTMLParser(html)
     title_node = raw.css_first("title")
@@ -148,6 +165,13 @@ def parse_page(html: str) -> ParsedPage:
     if body is None:
         return ParsedPage(title=title or None, og_title=og_title, main_text="", elements=[])
 
+    block_nodes = _find_repeated_blocks(body)
+    # Which (group, block) each block node is, to put elements into the blocks they are inside.
+    block_index = {
+        node.mem_id: (g, b) for g, group in enumerate(block_nodes) for b, node in enumerate(group)
+    }
+    repeated_groups: list[list[list[TextElement]]] = [[[] for _ in g] for g in block_nodes]
+
     elements: list[TextElement] = []
     for node in body.traverse():
         if not _is_element(node) or node.tag == "body":
@@ -155,18 +179,23 @@ def parse_page(html: str) -> ParsedPage:
         text = _get_own_text(node)
         if not text:
             continue
-        elements.append(
-            TextElement(
-                text=text,
-                tag=node.tag,
-                attrs={k: v or "" for k, v in node.attributes.items()},
-                label=_find_label(node),
-                heading_level=_find_heading_level(node),
-            )
+        element = TextElement(
+            text=text,
+            tag=node.tag,
+            attrs={k: v or "" for k, v in node.attributes.items()},
+            label=_find_label(node),
+            heading_level=_find_heading_level(node),
         )
+        elements.append(element)
+        for container in (node, *_get_ancestors(node)):
+            if container.mem_id in block_index:
+                g, b = block_index[container.mem_id]
+                repeated_groups[g][b].append(element)
+
     return ParsedPage(
         title=title or None,
         og_title=og_title,
         main_text=_build_main_text(body),
         elements=elements,
+        repeated_groups=repeated_groups,
     )

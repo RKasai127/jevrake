@@ -97,5 +97,9 @@ def build_model_from_fields_json(text: str) -> type[BaseModel]:
             error = e.errors()[0]
             location = ".".join(str(part) for part in (name, *error["loc"]))
             raise SchemaError(f"--fields.{location}: {error['msg']}") from None
-        definitions[name] = (_PY_TYPES[definition.type], Field(description=definition.description))
+        # CLI fields are optional: a value that is not found becomes null instead of an error.
+        definitions[name] = (
+            _PY_TYPES[definition.type] | None,
+            Field(default=None, description=definition.description),
+        )
     return create_model("Record", **definitions)

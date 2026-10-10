@@ -59,17 +59,19 @@ def test_writes_only_successful_pages_to_file(
     assert f"[error] {BASE}/missing: HTTP 404" in capsys.readouterr().err
 
 
-def test_pages_below_min_confidence_are_left_out(
+def test_values_below_min_confidence_become_null(
     jev: FakeJev, capsys: pytest.CaptureFixture[str]
 ) -> None:
     argv = [*ARGS, "--min-confidence", "0.95"]
 
     exit_code = cli.main(argv)
 
-    assert exit_code == cli.EXIT_PARTIAL
-    captured = capsys.readouterr()
-    assert json.loads(captured.out) == []
-    assert "confidence 0.90 is below 0.95" in captured.err
+    assert exit_code == cli.EXIT_OK
+    records = json.loads(capsys.readouterr().out)
+    assert records[0]["data"] == {"title": None, "price": None}
+    # What was rejected and why can still be seen in "fields".
+    assert records[0]["fields"]["price"]["source"] == "¥3,980"
+    assert records[0]["fields"]["price"]["confidence"] == 0.9
 
 
 def test_dry_run_prints_request_without_api_key(
@@ -119,3 +121,23 @@ def test_invalid_input_is_reported_as_input_error(jev: FakeJev, argv: list[str])
     exit_code = _run_cli(argv)
 
     assert exit_code == cli.EXIT_INPUT
+
+
+def test_list_page_prints_one_record_per_shop(
+    jev: FakeJev, capsys: pytest.CaptureFixture[str]
+) -> None:
+    jev.picks.update(name="shop-name", address="nearby label: 住所")
+    fields = '{"name": "店名", "address": "住所"}'
+
+    exit_code = cli.main([f"{BASE}/shops", "--fields", fields, "--delay", "0"])
+
+    assert exit_code == cli.EXIT_OK
+    records = json.loads(capsys.readouterr().out)
+    assert [r["data"]["name"] for r in records] == [
+        "アルファ新宿店",
+        "ベータ渋谷店",
+        "ガンマ池袋店",
+        "デルタ上野店",
+    ]
+    assert records[2]["data"]["address"] is None  # this shop has no address
+    assert all(r["url"] == f"{BASE}/shops" for r in records)

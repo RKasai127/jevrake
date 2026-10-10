@@ -33,8 +33,9 @@ results = rake(["https://example.com/item/1"], Product)
 jevrake collects every value on the page that matches each field's type, and Jev picks the one
 that fits the description. Values always come from the page; nothing is made up.
 
+- Works on list pages too: each repeated item (e.g. each shop in a list) becomes one record
 - Types: `str`, `int`, `float`, `decimal`
-- Only pages where every field was found with confidence ≥ 0.9 are output (JSON)
+- A value that is not found, or found with confidence below 0.9, becomes `null`
 - robots.txt is not checked. Respecting each site's rules is up to you.
 
 ## License

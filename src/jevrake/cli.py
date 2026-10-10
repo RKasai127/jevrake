@@ -92,12 +92,12 @@ def _run_command(args: argparse.Namespace) -> int:
             client.close()
 
     if not args.dry_run:
-        succeeded = [r for r in results if not r.errors]
-        text = json.dumps(
-            [r.model_dump(mode="json", exclude={"errors"}) for r in succeeded],
-            ensure_ascii=False,
-            indent=2,
-        )
+        records = [
+            {"url": result.url, **item.model_dump(mode="json")}
+            for result in results
+            for item in result.items
+        ]
+        text = json.dumps(records, ensure_ascii=False, indent=2)
         if args.output is None:
             print(text)
         else:

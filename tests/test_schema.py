@@ -59,7 +59,7 @@ def test_build_model_from_fields_json() -> None:
         "price": ("int", "税込価格"),
         "note": ("str", "note"),
     }
-    assert all(not s.is_optional for s in targets.values())
+    assert all(s.is_optional for s in targets.values())  # CLI fields are optional
 
 
 @pytest.mark.parametrize(

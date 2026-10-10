@@ -16,6 +16,7 @@ PAGES = {
     "/ja": "ja_product.html",
     "/en": "en_product.html",
     "/empty": "empty_page.html",
+    "/shops": "shop_list.html",
 }
 
 
@@ -58,7 +59,8 @@ class FakeJev:
             raise self.error
         choices = {}
         for name, question in questions.items():
-            wanted = self.picks.get(name)
+            # "item3.price" -> "price": the same pick is used for every item of a list page.
+            wanted = self.picks.get(name.split(".")[-1])
             choice = next(
                 (key for key, desc in question.criteria.items() if wanted and wanted in desc),
                 "__none__",
