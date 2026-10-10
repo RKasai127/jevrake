@@ -3,6 +3,8 @@ name = "jevrake"
 version = "0.1.0"
 description = "Selector-free web scraping powered by TypeSafe AI's Jev"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = ["pydantic>=2", "httpx", "selectolax", "typesafe-sdk"]
 
