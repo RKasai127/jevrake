@@ -11,7 +11,8 @@ from .fakes import AUTH_ERROR, FakeJev, site
 
 BASE = "https://shop.example"
 PICKS = {"title": "og:title", "price": "販売価格"}
-ARGS = [f"{BASE}/ja", "-f", "title:商品名", "-f", "price:税込価格:int", "--delay", "0"]
+FIELDS = '{"title": "商品名", "price": {"description": "税込価格", "type": "int"}}'
+ARGS = [f"{BASE}/ja", "--fields", FIELDS, "--delay", "0"]
 
 
 @pytest.fixture
@@ -108,9 +109,9 @@ def test_rejected_api_key_is_reported_as_auth_error(jev: FakeJev) -> None:
 @pytest.mark.parametrize(
     "argv",
     [
-        [f"{BASE}/ja"],
-        [*ARGS, "-f", "title:重複"],
-        [*ARGS, "-f", "1bad:x"],
+        [f"{BASE}/ja"],  # no --fields
+        [f"{BASE}/ja", "--fields", "not json"],
+        [f"{BASE}/ja", "--fields", '{"1bad": "x"}'],
         [*ARGS, "--min-confidence", "1.5"],
     ],
 )
