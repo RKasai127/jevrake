@@ -29,7 +29,7 @@ Output (1 of the 20 books on the page):
 ## Install
 
 ```sh
-pipx install git+https://github.com/RKasai127/jevrake
+pipx install jevrake
 export TYPESAFE_API_KEY=your-api-key
 ```
 
