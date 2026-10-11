@@ -10,7 +10,8 @@ from __future__ import annotations
 import re
 from typing import TypeGuard
 
-from selectolax.parser import HTMLParser, Node
+from selectolax.lexbor import LexborHTMLParser as HTMLParser
+from selectolax.lexbor import LexborNode as Node
 
 from .models import ParsedPage, TextElement
 
@@ -27,8 +28,12 @@ MAX_LABEL_CHARS = 30
 MIN_REPEATED_BLOCKS = 3
 
 
+def _get_tag(node: Node) -> str:
+    return node.tag or ""
+
+
 def _is_element(node: Node | None) -> TypeGuard[Node]:
-    return node is not None and not node.tag.startswith(("-", "_"))
+    return node is not None and not _get_tag(node).startswith(("-", "_"))
 
 
 def _is_hidden(node: Node) -> bool:
@@ -113,8 +118,9 @@ def _find_heading_level(node: Node) -> int | None:
     for _ in range(3):
         if not _is_element(current):
             return None
-        if re.fullmatch(r"h[1-6]", current.tag):
-            return int(current.tag[1])
+        tag = _get_tag(current)
+        if re.fullmatch(r"h[1-6]", tag):
+            return int(tag[1])
         current = current.parent
     return None
 
@@ -147,7 +153,7 @@ def _find_repeated_blocks(body: Node) -> list[list[Node]]:
         by_shape: dict[tuple[str, str], list[Node]] = {}
         for child in parent.iter():
             if _is_element(child) and _get_full_text(child):
-                shape = (child.tag, child.attributes.get("class") or "")
+                shape = (_get_tag(child), child.attributes.get("class") or "")
                 by_shape.setdefault(shape, []).append(child)
         groups.extend(b for b in by_shape.values() if len(b) >= MIN_REPEATED_BLOCKS)
     return groups
@@ -180,7 +186,7 @@ def parse_page(html: str) -> ParsedPage:
             continue
         element = TextElement(
             text=text,
-            tag=node.tag,
+            tag=_get_tag(node),
             attrs={k: v or "" for k, v in node.attributes.items()},
             label=_find_label(node),
             heading_level=_find_heading_level(node),
