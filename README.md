@@ -1,6 +1,8 @@
 # jevrake
 
-<h3 align="center"><em>jevrake extracts typed values from web pages without CSS selectors, using TypeSafe AI's Jev.</em></h3>
+English | [日本語](README.ja.md)
+
+<h3 align="center"><em>jevrake — a scraping tool powered by Jev</em></h3>
 
 Example on [books.toscrape.com](https://books.toscrape.com/), a site made for scraping practice:
 
