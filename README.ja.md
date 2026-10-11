@@ -1,6 +1,6 @@
 # jevrake
 
-[English](README.md) | 日本語
+[English](https://github.com/RKasai127/jevrake/blob/main/README.md) | 日本語
 
 <h3 align="center"><em>jevrake — Jevを利用したスクレイピングツール</em></h3>
 

@@ -1,6 +1,6 @@
 # jevrake
 
-English | [日本語](README.ja.md)
+English | [日本語](https://github.com/RKasai127/jevrake/blob/main/README.ja.md)
 
 <h3 align="center"><em>jevrake — a scraping tool powered by Jev</em></h3>
 

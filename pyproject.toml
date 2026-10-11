@@ -5,8 +5,25 @@ description = "Selector-free web scraping powered by TypeSafe AI's Jev"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
+authors = [{ name = "RKasai127" }]
+keywords = ["scraping", "web-scraping", "llm", "pydantic", "typesafe", "jev"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Internet :: WWW/HTTP :: Indexing/Search",
+    "Typing :: Typed",
+]
 requires-python = ">=3.12"
 dependencies = ["pydantic>=2", "httpx", "selectolax", "typesafe-sdk"]
+
+[project.urls]
+Homepage = "https://github.com/RKasai127/jevrake"
+Repository = "https://github.com/RKasai127/jevrake"
+Issues = "https://github.com/RKasai127/jevrake/issues"
 
 [project.scripts]
 jevrake = "jevrake.cli:main"
