@@ -29,7 +29,7 @@ jevrake https://books.toscrape.com/ --fields '{"title": "本のタイトル", "p
 ## インストール
 
 ```sh
-pipx install git+https://github.com/RKasai127/jevrake
+pipx install jevrake
 export TYPESAFE_API_KEY=あなたのAPIキー
 ```
 
