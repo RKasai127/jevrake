@@ -59,7 +59,7 @@ def test_build_model_from_fields_json() -> None:
         "price": ("int", "税込価格"),
         "note": ("str", "note"),
     }
-    assert all(s.is_optional for s in targets.values())  # CLI fields are optional
+    assert all(s.is_optional for s in targets.values())
 
 
 @pytest.mark.parametrize(
@@ -70,7 +70,8 @@ def test_build_model_from_fields_json() -> None:
         ("{}", "--fields must be a non-empty JSON object"),
         ('{"1bad": "x"}', "invalid field name '1bad'"),
         ('{"_x": "x"}', "invalid field name '_x'"),
-        ('{"title": "a", "title": "b"}', "duplicate field name 'title'"),
+        ('{"title": "a", "title": "b"}', "duplicate key 'title'"),
+        ('{"price": {"type": "int", "type": "str"}}', "duplicate key 'type'"),
         ('{"price": {"type": "money"}}', "--fields.price.type:"),
         ('{"price": {"desc": "x"}}', "--fields.price.desc:"),
         ('{"price": 1}', "--fields.price:"),

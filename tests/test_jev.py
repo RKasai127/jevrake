@@ -162,7 +162,7 @@ def test_parse_jev_response_discards_optional_value_below_min_confidence_without
     result = parse_jev_response(request, response, TARGETS, min_confidence=0.6)
 
     assert result.errors == []
-    assert "list_price" not in result.values  # optional with default: left to the default
+    assert "list_price" not in result.values
     assert result.fields["list_price"].value is None
 
 
@@ -175,7 +175,7 @@ def test_parse_jev_response_none_for_required_is_error() -> None:
 
     assert result.errors == ["price: no matching value (Jev chose __none__)"]
     assert result.fields["price"].value is None
-    assert "list_price" not in result.values  # optional with default: left to the default
+    assert "list_price" not in result.values
 
 
 def test_parse_jev_response_nullable_required_field_gets_none() -> None:

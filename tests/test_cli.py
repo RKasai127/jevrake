@@ -69,7 +69,6 @@ def test_values_below_min_confidence_become_null(
     assert exit_code == cli.EXIT_OK
     records = json.loads(capsys.readouterr().out)
     assert records[0]["data"] == {"title": None, "price": None}
-    # What was rejected and why can still be seen in "fields".
     assert records[0]["fields"]["price"]["source"] == "¥3,980"
     assert records[0]["fields"]["price"]["confidence"] == 0.9
 
@@ -111,7 +110,7 @@ def test_rejected_api_key_is_reported_as_auth_error(jev: FakeJev) -> None:
 @pytest.mark.parametrize(
     "argv",
     [
-        [f"{BASE}/ja"],  # no --fields
+        [f"{BASE}/ja"],
         [f"{BASE}/ja", "--fields", "not json"],
         [f"{BASE}/ja", "--fields", '{"1bad": "x"}'],
         [*ARGS, "--min-confidence", "1.5"],
@@ -139,5 +138,5 @@ def test_list_page_prints_one_record_per_shop(
         "ガンマ池袋店",
         "デルタ上野店",
     ]
-    assert records[2]["data"]["address"] is None  # this shop has no address
+    assert records[2]["data"]["address"] is None
     assert all(r["url"] == f"{BASE}/shops" for r in records)

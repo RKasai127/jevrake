@@ -1,8 +1,6 @@
-# jevrake
+<p align="right">English | <a href="https://github.com/RKasai127/jevrake/blob/main/README.ja.md">日本語</a></p>
 
-English | [日本語](https://github.com/RKasai127/jevrake/blob/main/README.ja.md)
-
-<h3 align="center"><em>jevrake — a scraping tool powered by Jev</em></h3>
+# jevrake — a scraping tool powered by Jev
 
 Example on [books.toscrape.com](https://books.toscrape.com/), a site made for scraping practice:
 

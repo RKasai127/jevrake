@@ -7,15 +7,18 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import typesafe_sdk as ts
 
 from .exceptions import JevAuthError, JevError, MissingAPIKeyError
 from .models import JevChoiceAnswer, JevResponse
 
+if TYPE_CHECKING:
+    import httpx2
+
 API_KEY_ENV = "TYPESAFE_API_KEY"
-MODEL = "jev-latest"  # always use the latest Jev model
+MODEL = "jev-latest"
 TIMEOUT = 30.0
 MAX_RETRIES = 3
 
@@ -37,7 +40,7 @@ class TypeSafeJevClient:
     the SDK's retry policy.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, transport: httpx2.BaseTransport | None = None) -> None:
         api_key = os.environ.get(API_KEY_ENV)
 
         if not api_key:
@@ -47,6 +50,7 @@ class TypeSafeJevClient:
             api_key=api_key,
             retry=ts.RetryPolicy(max_retries=MAX_RETRIES, timeout=None),
             timeout=TIMEOUT,
+            transport=transport,
         )
 
     def ask(self, state: Mapping[str, Any], questions: Mapping[str, Any]) -> JevResponse:

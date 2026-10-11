@@ -116,7 +116,7 @@ def _record_missing_value(
 ) -> None:
     if not target.is_optional:
         errors.append(f"{target.name}: {reason}")
-    elif target.required:  # nullable without default
+    elif target.required:
         values[target.name] = None
 
 
@@ -156,7 +156,6 @@ def parse_jev_response(
             errors.append(f"{name}: Jev returned an unknown choice: {answer.choice!r}")
             continue
         if answer.confidence < min_confidence:
-            # Not confident enough: discard the value but keep what was rejected and why.
             fields[name] = ExtractedValue(
                 value=None,
                 confidence=answer.confidence,

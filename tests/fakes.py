@@ -59,7 +59,6 @@ class FakeJev:
             raise self.error
         choices = {}
         for name, question in questions.items():
-            # "item3.price" -> "price": the same pick is used for every item of a list page.
             wanted = self.picks.get(name.split(".")[-1])
             choice = next(
                 (key for key, desc in question.criteria.items() if wanted and wanted in desc),

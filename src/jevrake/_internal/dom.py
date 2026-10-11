@@ -166,7 +166,6 @@ def parse_page(html: str) -> ParsedPage:
         return ParsedPage(title=title or None, og_title=og_title, main_text="", elements=[])
 
     block_nodes = _find_repeated_blocks(body)
-    # Which (group, block) each block node is, to put elements into the blocks they are inside.
     block_index = {
         node.mem_id: (g, b) for g, group in enumerate(block_nodes) for b, node in enumerate(group)
     }

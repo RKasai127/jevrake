@@ -92,7 +92,6 @@ def test_text_candidates_include_title_og_and_headings() -> None:
     texts = [c.text for c in candidates]
     assert texts[0] == "ワイヤレスイヤホン X100 | サンプルショップ"
     assert "ワイヤレスイヤホン X100" in texts
-    # og:title and h1 share the same value: kept once, with the richer context.
     assert texts.count("ワイヤレスイヤホン X100") == 1
 
 
