@@ -7,7 +7,7 @@ import httpx
 import pytest
 from pydantic import BaseModel, Field
 
-from jevrake import ExtractedValue, rake
+from jevrake import ExtractedValue, __version__, rake
 from jevrake._internal import api
 from jevrake._internal.exceptions import JevAuthError, JevError
 from jevrake._internal.fetch import HttpxFetcher
@@ -97,7 +97,7 @@ def test_user_agent_sent_and_robots_txt_not_fetched() -> None:
     rake([f"{BASE}/ja"], Product, fetcher=fetcher(transport=site(requests)), client=FakeJev())
 
     assert [r.url.path for r in requests] == ["/ja"]
-    assert requests[0].headers["user-agent"] == "jevrake/0.1.0"
+    assert requests[0].headers["user-agent"] == f"jevrake/{__version__}"
 
 
 def test_rate_limit_per_host() -> None:
