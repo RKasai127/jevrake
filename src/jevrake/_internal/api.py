@@ -57,14 +57,11 @@ def _rake_page[T: BaseModel](
     errors: list[str] = []
     for start in range(0, len(numbered), MAX_ITEMS_PER_REQUEST):
         chunk = numbered[start : start + MAX_ITEMS_PER_REQUEST]
-        candidates_by_item = {
-            item: {t.name: collect.generate_candidates(page, block, t) for t in targets}
-            for item, block in chunk
-        }
+        candidates_by_item = {item: block.candidates for item, block in chunk}
         request = jev.build_jev_request(url, page, targets, candidates_by_item)
         if on_request is not None:
             on_request(url, jev.build_jev_payload(request, MODEL))
-        if client is None:  # dry run
+        if client is None:
             continue
 
         response = JevResponse()
@@ -74,14 +71,16 @@ def _rake_page[T: BaseModel](
             except JevAuthError:
                 raise
             except JevError as e:
-                return _build_failed_result(model, url, str(e))
+                first, last = chunk[0][0], chunk[-1][0]
+                errors.append(str(e) if first is None else f"items {first}-{last}: {e}")
+                continue
             if response.request_id:
                 request_ids.append(response.request_id)
 
         for item, _ in chunk:
             prefix = "" if item is None else f"item {item}: "
             outcome = jev.parse_jev_response(request, response, targets, min_confidence, item)
-            if outcome.errors:  # drop this item, keep the others
+            if outcome.errors:
                 errors.extend(prefix + e for e in outcome.errors)
                 continue
             try:

@@ -88,7 +88,6 @@ def test_repeated_blocks_are_found() -> None:
         "ガンマ池袋店",
         "デルタ上野店",
     ]
-    # The nested tag lists (<ul class="tags">) inside each shop are found too.
     assert any([e.text for e in g[0]] == ["駐車場"] for g in page.repeated_groups)
 
 

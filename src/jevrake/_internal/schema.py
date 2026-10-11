@@ -64,10 +64,11 @@ def build_targets_from_model(model: type[BaseModel]) -> list[ExtractionTarget]:
 
 
 def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """Used for every JSON object, so it may be a field name or a key such as ``type``."""
     names = [name for name, _ in pairs]
     for name in names:
         if names.count(name) > 1:
-            raise SchemaError(f"--fields: duplicate field name {name!r}")
+            raise SchemaError(f"--fields: duplicate key {name!r}")
     return dict(pairs)
 
 
@@ -97,7 +98,6 @@ def build_model_from_fields_json(text: str) -> type[BaseModel]:
             error = e.errors()[0]
             location = ".".join(str(part) for part in (name, *error["loc"]))
             raise SchemaError(f"--fields.{location}: {error['msg']}") from None
-        # CLI fields are optional: a value that is not found becomes null instead of an error.
         definitions[name] = (
             _PY_TYPES[definition.type] | None,
             Field(default=None, description=definition.description),

@@ -1,8 +1,6 @@
-# jevrake
+<p align="right"><a href="https://github.com/RKasai127/jevrake/blob/main/README.md">English</a> | 日本語</p>
 
-[English](https://github.com/RKasai127/jevrake/blob/main/README.md) | 日本語
-
-<h3 align="center"><em>jevrake — Jevを利用したスクレイピングツール</em></h3>
+# jevrake — Jevを利用したスクレイピングツール
 
 スクレイピング練習用サイト [books.toscrape.com](https://books.toscrape.com/) での実行例：
 

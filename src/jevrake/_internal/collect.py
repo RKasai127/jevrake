@@ -19,11 +19,8 @@ from .models import ExtractionCandidate, ExtractionTarget, ItemBlock, ParsedPage
 MAX_CANDIDATES = 254  # plus "__none__" = 255 choices
 MAX_TEXT_CHARS = 200
 _PREFIX_LABEL_CHARS = 20
-# A repeated group is used as the list of items only if it has at least this many items with a
-# candidate for every required target, and holds at least this share of the page text.
 MIN_LIST_ITEMS = 3
 MIN_LIST_TEXT_SHARE = 0.5
-# An item of a list has short values such as a name or a price; sections of an article do not.
 MAX_SHORT_TEXT_CHARS = 40
 
 
@@ -173,8 +170,22 @@ def _count_text(elements: list[TextElement]) -> int:
     return sum(len(e.text) for e in elements)
 
 
+def _build_block(
+    page: ParsedPage,
+    elements: list[TextElement],
+    is_whole_page: bool,
+    targets: list[ExtractionTarget],
+) -> ItemBlock:
+    """Make a block and collect the candidates of every target in it."""
+    block = ItemBlock(elements=elements, is_whole_page=is_whole_page)
+    candidates = {t.name: generate_candidates(page, block, t) for t in targets}
+    return block.model_copy(update={"candidates": candidates})
+
+
 def find_item_blocks(page: ParsedPage, targets: list[ExtractionTarget]) -> list[ItemBlock]:
     """Return one block per item on a list page, or the whole page as a single block.
+
+    Each block comes with the candidates of every target, so they are collected only once.
 
     Every block of the chosen group is returned, so an item that misses a value is reported later
     instead of silently disappearing.
@@ -184,16 +195,16 @@ def find_item_blocks(page: ParsedPage, targets: list[ExtractionTarget]) -> list[
     best: list[ItemBlock] = []
     best_items = 0
     for group in page.repeated_groups:
-        blocks = [ItemBlock(elements=elements, is_whole_page=False) for elements in group]
+        blocks = [_build_block(page, elements, False, targets) for elements in group]
         items = sum(
             1
             for block in blocks
             if len(block.elements) >= 2
             and any(len(e.text) <= MAX_SHORT_TEXT_CHARS for e in block.elements)
-            and all(generate_candidates(page, block, t) for t in required)
+            and all(block.candidates[t.name] for t in required)
         )
         text_share = _count_text([e for b in blocks for e in b.elements]) / max(page_text, 1)
         is_list = items >= MIN_LIST_ITEMS and text_share >= MIN_LIST_TEXT_SHARE
         if is_list and items > best_items:
             best, best_items = blocks, items
-    return best or [ItemBlock(elements=page.elements, is_whole_page=True)]
+    return best or [_build_block(page, page.elements, True, targets)]
