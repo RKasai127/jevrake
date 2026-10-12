@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from jevrake import cli
+from jevrake._internal import api
 from jevrake._internal.fetch import HttpxFetcher
 
 from .fakes import AUTH_ERROR, FakeJev, site
@@ -18,8 +19,8 @@ ARGS = [f"{BASE}/ja", "--fields", FIELDS, "--delay", "0"]
 @pytest.fixture
 def jev(monkeypatch: pytest.MonkeyPatch) -> FakeJev:
     fake = FakeJev(PICKS)
-    monkeypatch.setattr(cli, "HttpxFetcher", functools.partial(HttpxFetcher, transport=site()))
-    monkeypatch.setattr(cli, "TypeSafeJevClient", lambda: fake)
+    monkeypatch.setattr(api, "HttpxFetcher", functools.partial(HttpxFetcher, transport=site()))
+    monkeypatch.setattr(api, "TypeSafeJevClient", lambda: fake)
     return fake
 
 
@@ -77,7 +78,7 @@ def test_dry_run_prints_request_without_api_key(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
-    monkeypatch.setattr(cli, "HttpxFetcher", functools.partial(HttpxFetcher, transport=site()))
+    monkeypatch.setattr(api, "HttpxFetcher", functools.partial(HttpxFetcher, transport=site()))
 
     exit_code = cli.main([*ARGS, "--dry-run"])
 

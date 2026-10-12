@@ -35,14 +35,14 @@ _PLAIN_NUMBER_RE = re.compile(r"-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?")
 
 
 def parse_number(text: str) -> Decimal:
-    s = normalize_text(text).replace("\u2212", "-")
-    s = s.strip(CURRENCY_PREFIXES + " ")
+    number_text = normalize_text(text).replace("\u2212", "-")
+    number_text = number_text.strip(CURRENCY_PREFIXES + " ")
     for suffix in CURRENCY_SUFFIXES:
-        s = s.removesuffix(suffix).strip()
-    if not _PLAIN_NUMBER_RE.fullmatch(s):
+        number_text = number_text.removesuffix(suffix).strip()
+    if not _PLAIN_NUMBER_RE.fullmatch(number_text):
         raise CoercionError(f"not a number: {text!r}")
     try:
-        return Decimal(s.replace(",", ""))
+        return Decimal(number_text.replace(",", ""))
     except InvalidOperation:
         raise CoercionError(f"not a number: {text!r}") from None
 
@@ -55,16 +55,16 @@ def _convert_to_int(text: str) -> int:
 
 
 def _convert_to_str(text: str) -> str:
-    s = " ".join(text.split())
-    if not s:
+    cleaned_text = " ".join(text.split())
+    if not cleaned_text:
         raise CoercionError("empty string")
-    return s
+    return cleaned_text
 
 
 _CONVERTERS: dict[str, Callable[[str], Any]] = {
     "str": _convert_to_str,
     "int": _convert_to_int,
-    "float": lambda t: float(parse_number(t)),
+    "float": lambda text: float(parse_number(text)),
     "decimal": parse_number,
 }
 

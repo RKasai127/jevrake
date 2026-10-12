@@ -48,12 +48,11 @@ URL を先頭から1件ずつ順に処理し、URL と同じ順で1ページに�
 | `urls` | （必須） | URL のリスト |
 | `model` | （必須） | 取得する項目を定義した Pydantic モデル |
 | `min_confidence` | `0.9` | これ未満の確信度の値は捨てる |
-| `fetcher` | `HttpxFetcher()` | 取得処理の差し替え（主にテスト用） |
-| `client` | `TypeSafeJevClient()` | Jev クライアントの差し替え（主にテスト用） |
+| `delay` | `1.0` | 同一ホストへのアクセス間隔（秒） |
 | `dry_run` | `False` | Jev に送信しない |
 | `on_request` | `None` | 送信内容を受け取るコールバック `(url, payload) -> None` |
 
-`fetcher` / `client` を渡さなかった場合は、`rake()` の中で作り、最後に閉じる。
+取得処理（`HttpxFetcher`）と Jev クライアント（`TypeSafeJevClient`）は `rake()` の中で作り、最後に閉じる。
 APIキーが未設定・拒否された場合は `JevAuthError` を送出して全体を止める。
 
 ### 3.2 対応する型
@@ -155,7 +154,7 @@ jevrake URL... --fields JSON [-o FILE] [--min-confidence FLOAT] [--delay FLOAT] 
 - 条件を満たすグループが複数あれば、1件らしいブロックが最も多いものを採る。どれも満たさなければ、ページ全体を1件とする
 - 採ったグループのブロックは、条件を満たさないものも含めてすべて1件として扱う（欠けた値は 3.4 のとおり処理する）
 
-しきい値は collect.py の定数（`MIN_LIST_ITEMS = 3`、`MIN_LIST_TEXT_SHARE = 0.5`、`MAX_SHORT_TEXT_CHARS = 40`）。
+しきい値は collect.py の定数（`MIN_LIST_ITEMS = 3`、`MIN_LIST_TEXT_RATIO = 0.5`、`MAX_SHORT_TEXT_CHARS = 40`）。
 
 ## 6. Jev との連携
 
@@ -212,7 +211,6 @@ Jev に送る文面はすべて英語。
 
 - 公開 API は `jevrake/__init__.py` で再エクスポートし、`__all__` に明示する（`rake`、`RakeResult`、`RakeItem`、`ExtractedValue`、`__version__`）。内部実装は `_internal/` にまとめ、自由に変更してよい
 - 通信を行うのは `fetch.py` と `client.py` だけ。ほかのモジュールは入力を受け取って結果を返すだけの処理にする
-- 取得処理（`Fetcher`）と Jev クライアント（`JevClient`）は `typing.Protocol` で定義し、`rake()` の引数で差し替えられる
 - データモデルはすべて Pydantic の `BaseModel` で `models.py` に、例外は `exceptions.py` にまとめる
 - 関数名は「動詞＋名詞」、簡単な英語を使う。ファイル内をコメントで区切らない
 - 依存は最小限（実行時：`pydantic` / `httpx` / `selectolax` / `typesafe-sdk`、開発時：`pytest` / `ruff`）
@@ -242,7 +240,7 @@ docs/spec.md           この仕様書
 
 ## 11. テスト
 
-- すべてネットワークなしで実行できる。HTTP は `httpx.MockTransport`（Jev SDK は `httpx2.MockTransport`）で差し替え、Jev は決められた回答を返すフェイクを注入する
+- すべてネットワークなしで実行できる。HTTP は `httpx.MockTransport`（Jev SDK は `httpx2.MockTransport`）で差し替え、Jev は決められた回答を返すフェイクに差し替える（`monkeypatch` で `api.HttpxFetcher` / `api.TypeSafeJevClient` を置き換える）
 - 各テストは「準備 → 実行 → 確認」の3段を空行で区切る
 - 実際の Jev API を呼ぶテスト（E2E）は対象外
 

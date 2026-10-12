@@ -18,12 +18,12 @@ class ExtractionTarget(BaseModel):
     name: str
     description: str
     kind: ExtractionKind
-    nullable: bool = False
-    required: bool = True
+    is_nullable: bool = False
+    is_required: bool = True
 
     @property
     def is_optional(self) -> bool:
-        return self.nullable or not self.required
+        return self.is_nullable or not self.is_required
 
 
 class TargetDefinition(BaseModel):
@@ -75,14 +75,14 @@ class ItemBlock(BaseModel):
 
     elements: list[TextElement]
     is_whole_page: bool
-    candidates: dict[str, list[ExtractionCandidate]] = {}
+    candidates_by_target: dict[str, list[ExtractionCandidate]] = {}
 
 
 class JevRequest(BaseModel):
     state: dict[str, str]
     questions: dict[str, Choice] = {}
-    options: dict[str, dict[str, ExtractionCandidate]] = {}
-    skipped: list[str] = []
+    options_by_question: dict[str, dict[str, ExtractionCandidate]] = {}
+    skipped_keys: list[str] = []
 
 
 class JevChoiceAnswer(BaseModel):

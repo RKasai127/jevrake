@@ -14,9 +14,8 @@ from pathlib import Path
 from typing import Any
 
 from ._internal import api
-from ._internal.client import TypeSafeJevClient
 from ._internal.exceptions import JevAuthError, SchemaError
-from ._internal.fetch import DEFAULT_DELAY, HttpxFetcher
+from ._internal.fetch import DEFAULT_DELAY
 from ._internal.schema import build_model_from_fields_json
 from ._internal.version import VERSION
 
@@ -74,22 +73,14 @@ def _run_command(args: argparse.Namespace) -> int:
 
     model = build_model_from_fields_json(args.fields)
 
-    client = None if args.dry_run else TypeSafeJevClient()
-    fetcher = HttpxFetcher(delay=args.delay)
-    try:
-        results = api.rake(
-            args.urls,
-            model,
-            min_confidence=args.min_confidence,
-            fetcher=fetcher,
-            client=client,
-            dry_run=args.dry_run,
-            on_request=_print_dry_run if args.dry_run else None,
-        )
-    finally:
-        fetcher.close()
-        if client is not None:
-            client.close()
+    results = api.rake(
+        args.urls,
+        model,
+        min_confidence=args.min_confidence,
+        delay=args.delay,
+        dry_run=args.dry_run,
+        on_request=_print_dry_run if args.dry_run else None,
+    )
 
     if not args.dry_run:
         records = [
@@ -97,18 +88,18 @@ def _run_command(args: argparse.Namespace) -> int:
             for result in results
             for item in result.items
         ]
-        text = json.dumps(records, ensure_ascii=False, indent=2)
+        records_json = json.dumps(records, ensure_ascii=False, indent=2)
         if args.output is None:
-            print(text)
+            print(records_json)
         else:
-            args.output.write_text(text + "\n", encoding="utf-8")
+            args.output.write_text(records_json + "\n", encoding="utf-8")
 
-    failed = [r for r in results if r.errors]
-    for result in failed:
+    failed_results = [result for result in results if result.errors]
+    for result in failed_results:
         for error in result.errors:
             print(f"[error] {result.url}: {error}", file=sys.stderr)
 
-    return EXIT_PARTIAL if failed else EXIT_OK
+    return EXIT_PARTIAL if failed_results else EXIT_OK
 
 
 def main(argv: Sequence[str] | None = None) -> int:

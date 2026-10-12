@@ -12,9 +12,9 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from . import collect, dom, jev
-from .client import MODEL, JevClient, TypeSafeJevClient
+from .client import MODEL, TypeSafeJevClient
 from .exceptions import FetchError, JevAuthError, JevError
-from .fetch import Fetcher, HttpxFetcher
+from .fetch import DEFAULT_DELAY, HttpxFetcher
 from .models import ExtractionTarget, ItemBlock, JevResponse, RakeItem, RakeResult
 from .schema import build_targets_from_model
 
@@ -29,15 +29,18 @@ def _build_failed_result[T: BaseModel](model: type[T], url: str, error: str) -> 
 
 
 def _format_validation_errors(error: ValidationError) -> list[str]:
-    return [f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in error.errors()]
+    return [
+        f"{'.'.join(str(part) for part in detail['loc'])}: {detail['msg']}"
+        for detail in error.errors()
+    ]
 
 
 def _rake_page[T: BaseModel](
     url: str,
     model: type[T],
     targets: list[ExtractionTarget],
-    fetcher: Fetcher,
-    client: JevClient | None,
+    fetcher: HttpxFetcher,
+    client: TypeSafeJevClient | None,
     min_confidence: float,
     on_request: RequestHook | None,
 ) -> RakeResult[T]:
@@ -47,17 +50,19 @@ def _rake_page[T: BaseModel](
         return _build_failed_result(model, url, str(e))
 
     page = dom.parse_page(html)
-    blocks = collect.find_item_blocks(page, targets)
-    numbered: list[tuple[int | None, ItemBlock]] = (
-        [(None, blocks[0])] if blocks[0].is_whole_page else list(enumerate(blocks))
+    item_blocks = collect.find_item_blocks(page, targets)
+    numbered_blocks: list[tuple[int | None, ItemBlock]] = (
+        [(None, item_blocks[0])] if item_blocks[0].is_whole_page else list(enumerate(item_blocks))
     )
 
     items: list[RakeItem[T]] = []
     request_ids: list[str] = []
     errors: list[str] = []
-    for start in range(0, len(numbered), MAX_ITEMS_PER_REQUEST):
-        chunk = numbered[start : start + MAX_ITEMS_PER_REQUEST]
-        candidates_by_item = {item: block.candidates for item, block in chunk}
+    for start in range(0, len(numbered_blocks), MAX_ITEMS_PER_REQUEST):
+        request_blocks = numbered_blocks[start : start + MAX_ITEMS_PER_REQUEST]
+        candidates_by_item = {
+            item_no: block.candidates_by_target for item_no, block in request_blocks
+        }
         request = jev.build_jev_request(url, page, targets, candidates_by_item)
         if on_request is not None:
             on_request(url, jev.build_jev_payload(request, MODEL))
@@ -71,22 +76,26 @@ def _rake_page[T: BaseModel](
             except JevAuthError:
                 raise
             except JevError as e:
-                first, last = chunk[0][0], chunk[-1][0]
-                errors.append(str(e) if first is None else f"items {first}-{last}: {e}")
+                first_item_no, last_item_no = request_blocks[0][0], request_blocks[-1][0]
+                errors.append(
+                    str(e)
+                    if first_item_no is None
+                    else f"items {first_item_no}-{last_item_no}: {e}"
+                )
                 continue
             if response.request_id:
                 request_ids.append(response.request_id)
 
-        for item, _ in chunk:
-            prefix = "" if item is None else f"item {item}: "
-            outcome = jev.parse_jev_response(request, response, targets, min_confidence, item)
+        for item_no, _ in request_blocks:
+            error_prefix = "" if item_no is None else f"item {item_no}: "
+            outcome = jev.parse_jev_response(request, response, targets, min_confidence, item_no)
             if outcome.errors:
-                errors.extend(prefix + e for e in outcome.errors)
+                errors.extend(error_prefix + error for error in outcome.errors)
                 continue
             try:
                 data = model.model_validate(outcome.values)
             except ValidationError as e:
-                errors.extend(prefix + m for m in _format_validation_errors(e))
+                errors.extend(error_prefix + error for error in _format_validation_errors(e))
                 continue
             items.append(RakeItem[model](data=data, fields=outcome.fields))  # type: ignore[valid-type]
 
@@ -107,26 +116,21 @@ def rake[T: BaseModel](
     model: type[T],
     *,
     min_confidence: float = DEFAULT_MIN_CONFIDENCE,
-    fetcher: Fetcher | None = None,
-    client: JevClient | None = None,
+    delay: float = DEFAULT_DELAY,
     dry_run: bool = False,
     on_request: RequestHook | None = None,
 ) -> list[RakeResult[T]]:
     """Extract records of ``model`` from each URL, one page at a time, in the order of ``urls``.
 
-    Raises :class:`JevAuthError` if the API key is missing or rejected.
+    ``delay`` is the wait between requests to the same host. Raises :class:`JevAuthError` if the
+    API key is missing or rejected.
     """
     targets = build_targets_from_model(model)
 
-    created: list[HttpxFetcher | TypeSafeJevClient] = []
-    if fetcher is None:
-        fetcher = HttpxFetcher()
-        created.append(fetcher)
-    if dry_run:
-        client = None
-    elif client is None:
-        client = TypeSafeJevClient()
-        created.append(client)
+    # Made once here and passed down instead of per page: the fetcher remembers when each host
+    # was last accessed (for ``delay``), and the client keeps its connection open.
+    client = None if dry_run else TypeSafeJevClient()
+    fetcher = HttpxFetcher(delay=delay)
 
     try:
         return [
@@ -134,5 +138,6 @@ def rake[T: BaseModel](
             for url in urls
         ]
     finally:
-        for resource in created:
-            resource.close()
+        fetcher.close()
+        if client is not None:
+            client.close()
