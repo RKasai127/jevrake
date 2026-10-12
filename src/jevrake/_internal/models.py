@@ -69,7 +69,11 @@ class ExtractionCandidate(BaseModel):
 
 
 class ItemBlock(BaseModel):
-    """The part of a page that holds one record: the whole page, or one item of a list page."""
+    """The part of a page that holds one item (one record of output).
+
+    On a list page, each repeated entry (e.g. one shop) is an item, numbered from 0 (``item_no``).
+    On any other page, the whole page is the only item (``item_no`` is ``None``).
+    """
 
     model_config = ConfigDict(frozen=True)
 

@@ -126,7 +126,7 @@ jevrake URL... --fields JSON [-o FILE] [--min-confidence FLOAT] [--delay FLOAT] 
 
 ### 4.2 出力
 
-1件＝1レコードの JSON 配列。一覧ページなら、1ページから複数レコードが出る。
+1件＝1要素の JSON 配列。一覧ページなら、1ページから複数件が出る。
 
 ```json
 [{"url": "...", "data": {"title": "...", "price": 3980}, "fields": {"title": {...}, "price": {...}}}]

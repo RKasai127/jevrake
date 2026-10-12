@@ -1,7 +1,8 @@
-"""Extract records from each page with ``rake()``.
+"""Extract items from each page with ``rake()``.
 
-For each URL: download the page, split it into items (one for a single-record page), collect
-candidate values, ask Jev to choose one per field, and validate each item with the user's model.
+For each URL: download the page, split it into items (the whole page is one item if it is not a
+list), collect candidate values, ask Jev to choose one per field, and validate each item with the
+user's model.
 """
 
 from __future__ import annotations
@@ -120,7 +121,7 @@ def rake[T: BaseModel](
     dry_run: bool = False,
     on_request: RequestHook | None = None,
 ) -> list[RakeResult[T]]:
-    """Extract records of ``model`` from each URL, one page at a time, in the order of ``urls``.
+    """Extract items of ``model`` from each URL, one page at a time, in the order of ``urls``.
 
     ``delay`` is the wait between requests to the same host. Raises :class:`JevAuthError` if the
     API key is missing or rejected.

@@ -83,16 +83,16 @@ def _run_command(args: argparse.Namespace) -> int:
     )
 
     if not args.dry_run:
-        records = [
+        output_items = [
             {"url": result.url, **item.model_dump(mode="json")}
             for result in results
             for item in result.items
         ]
-        records_json = json.dumps(records, ensure_ascii=False, indent=2)
+        items_json = json.dumps(output_items, ensure_ascii=False, indent=2)
         if args.output is None:
-            print(records_json)
+            print(items_json)
         else:
-            args.output.write_text(records_json + "\n", encoding="utf-8")
+            args.output.write_text(items_json + "\n", encoding="utf-8")
 
     failed_results = [result for result in results if result.errors]
     for result in failed_results:
