@@ -1,6 +1,6 @@
 [project]
 name = "jevrake"
-version = "0.2.0"
+version = "0.2.1"
 description = "Selector-free web scraping powered by TypeSafe AI's Jev"
 readme = "README.md"
 license = "MIT"

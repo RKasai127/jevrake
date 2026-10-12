@@ -1,10 +1,8 @@
 from decimal import Decimal
 
 from jevrake._internal.collect import (
-    MAX_CANDIDATES,
     find_item_blocks,
     generate_candidates,
-    keep_top_candidates,
     remove_duplicates,
 )
 from jevrake._internal.dom import parse_page
@@ -27,10 +25,8 @@ def _whole(page: ParsedPage) -> ItemBlock:
     return ItemBlock(elements=page.elements, is_whole_page=True)
 
 
-def _candidate(value: object, context: dict[str, str], score: float = 0) -> ExtractionCandidate:
-    return ExtractionCandidate(
-        text=str(value), normalized_value=value, context=context, score=score
-    )
+def _candidate(value: object, context: dict[str, str]) -> ExtractionCandidate:
+    return ExtractionCandidate(text=str(value), normalized_value=value, context=context)
 
 
 def test_japanese_prices() -> None:
@@ -113,24 +109,6 @@ def test_remove_duplicates_keeps_candidate_with_more_context() -> None:
     unique = remove_duplicates(items)
 
     assert unique == [items[1], items[2]]
-
-
-def test_keep_top_candidates_keeps_document_order() -> None:
-    items = [_candidate(i, {}, score=i % 7) for i in range(300)]
-
-    kept = keep_top_candidates(items)
-
-    assert len(kept) == MAX_CANDIDATES
-    assert [c.normalized_value for c in kept] == sorted(c.normalized_value for c in kept)
-    assert min(c.score for c in kept) >= max(c.score for c in items if c not in kept)
-
-
-def test_generate_candidates_returns_at_most_254() -> None:
-    page = parse_page("<body>" + "".join(f"<p>¥{i:,}</p>" for i in range(1000, 1400)) + "</body>")
-
-    candidates = generate_candidates(page, _whole(page), _target("int"))
-
-    assert len(candidates) == MAX_CANDIDATES
 
 
 SHOP_TARGETS = [
