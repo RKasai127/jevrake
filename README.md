@@ -54,6 +54,8 @@ class Product(BaseModel):
 results = rake(["https://example.com/item/1"], Product)
 ```
 
+A runnable example is in [examples/example.py](https://github.com/RKasai127/jevrake/blob/main/examples/example.py).
+
 jevrake collects every value on the page that matches each field's type, and Jev picks the one
 that fits the description. Values always come from the page.
 
