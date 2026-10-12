@@ -26,7 +26,7 @@ def _whole(page: ParsedPage) -> ItemBlock:
 
 
 def _candidate(value: object, context: dict[str, str]) -> ExtractionCandidate:
-    return ExtractionCandidate(text=str(value), normalized_value=value, context=context)
+    return ExtractionCandidate(text=str(value), normalized_value=value, contexts=[context])
 
 
 def test_japanese_prices() -> None:
@@ -49,8 +49,8 @@ def test_price_label_and_unit_context() -> None:
     first = candidates[0]
     assert first.text == "¥3,980"
     assert first.normalized_value == 3980
-    assert first.context["label"] == "販売価格"
-    assert first.context["unit"] == "¥"
+    assert first.contexts[0]["label"] == "販売価格"
+    assert first.contexts[0]["unit"] == "¥"
 
 
 def test_numbers_in_japanese_and_iso_dates_are_not_candidates() -> None:
@@ -99,16 +99,18 @@ def test_empty_page_has_no_numbers() -> None:
     assert candidates == []
 
 
-def test_remove_duplicates_keeps_candidate_with_more_context() -> None:
+def test_remove_duplicates_keeps_every_place_of_the_same_value() -> None:
     items = [
         _candidate(100, {"tag": "<p>"}),
         _candidate(200, {"tag": "<p>"}),
         _candidate(100, {"tag": "<span>", "label": "価格"}),
+        _candidate(100, {"tag": "<p>"}),
     ]
 
     unique = remove_duplicates(items)
 
-    assert unique == [items[1], items[2]]
+    assert [c.normalized_value for c in unique] == [100, 200]
+    assert unique[0].contexts == [{"tag": "<p>"}, {"tag": "<span>", "label": "価格"}]
 
 
 SHOP_TARGETS = [

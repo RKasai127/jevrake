@@ -127,6 +127,24 @@ def test_describe_candidate_truncates_long_text() -> None:
     assert len(description) < 250
 
 
+def test_describe_candidate_lists_every_place() -> None:
+    candidate = ExtractionCandidate(
+        text="In stock",
+        normalized_value="In stock",
+        contexts=[
+            {"tag": "<p class=instock>", "label": "£51.77"},
+            {"tag": "<td>", "label": "Availability"},
+        ],
+    )
+
+    description = describe_candidate(candidate)
+
+    assert description == (
+        '"In stock" | <p class=instock> | nearby label: £51.77'
+        " ; also at <td> | nearby label: Availability"
+    )
+
+
 def test_parse_jev_response_success() -> None:
     page, found = _page_and_candidates()
     request = build_jev_request(URL, page, TARGETS, {None: found})

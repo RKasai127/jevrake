@@ -53,20 +53,20 @@ def _find_text_candidates(page: ParsedPage, block: ItemBlock) -> Iterator[Extrac
         yield ExtractionCandidate(
             text=page.title,
             normalized_value=None,
-            context={"tag": "<title>", "source": "page title"},
+            contexts=[{"tag": "<title>", "source": "page title"}],
         )
     if block.is_whole_page and page.og_title:
         yield ExtractionCandidate(
             text=page.og_title,
             normalized_value=None,
-            context={"tag": "<meta og:title>", "source": "og:title"},
+            contexts=[{"tag": "<meta og:title>", "source": "og:title"}],
         )
     for element in block.elements:
         if 2 <= len(element.text) <= MAX_TEXT_CHARS:
             yield ExtractionCandidate(
                 text=element.text,
                 normalized_value=None,
-                context=_build_context(element),
+                contexts=[_build_context(element)],
             )
 
 
@@ -81,19 +81,27 @@ def _find_number_candidates(block: ItemBlock) -> Iterator[ExtractionCandidate]:
             yield ExtractionCandidate(
                 text=match.group(0).strip(),
                 normalized_value=None,
-                context=context,
+                contexts=[context],
             )
 
 
 def remove_duplicates(candidates: list[ExtractionCandidate]) -> list[ExtractionCandidate]:
-    """Keep one candidate per ``normalized_value``: the one with the most context."""
-    index_by_value: dict[Any, int] = {}
-    for index, candidate in enumerate(candidates):
+    """Merge candidates with the same ``normalized_value`` into one that keeps every place.
+
+    Keeping only one place would drop the best clue when another place has it (e.g. the ``<h1>``).
+    """
+    merged_by_value: dict[Any, ExtractionCandidate] = {}
+    for candidate in candidates:
         value = candidate.normalized_value
-        kept_index = index_by_value.get(value)
-        if kept_index is None or len(candidate.context) > len(candidates[kept_index].context):
-            index_by_value[value] = index
-    return [candidates[index] for index in sorted(index_by_value.values())]
+        merged = merged_by_value.get(value)
+        if merged is None:
+            merged_by_value[value] = candidate
+            continue
+        new_contexts = [c for c in candidate.contexts if c not in merged.contexts]
+        merged_by_value[value] = merged.model_copy(
+            update={"contexts": [*merged.contexts, *new_contexts]}
+        )
+    return list(merged_by_value.values())
 
 
 def generate_candidates(

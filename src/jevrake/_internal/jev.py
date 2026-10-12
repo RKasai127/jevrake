@@ -24,6 +24,7 @@ NONE_CHOICE = "__none__"
 NONE_DESCRIPTION = "None of these is the requested value."
 MAX_CHOICES = 255
 MAX_DESCRIPTION_TEXT = 200
+MAX_DESCRIBED_PLACES = 3
 
 CHOICE_INSTRUCTIONS = (
     'Which option is "{description}"? Choose the option that represents the {name} of this page.'
@@ -40,13 +41,8 @@ def build_question_key(name: str, item_no: int | None) -> str:
     return name if item_no is None else f"item{item_no}.{name}"
 
 
-def describe_candidate(candidate: ExtractionCandidate) -> str:
-    """e.g. ``"¥3,980" | <span class=price> | nearby label: 販売価格``"""
-    text = candidate.text
-    if len(text) > MAX_DESCRIPTION_TEXT:
-        text = text[:MAX_DESCRIPTION_TEXT] + "…"
-    parts = [json.dumps(text, ensure_ascii=False)]
-    context = candidate.context
+def _describe_place(context: dict[str, str]) -> str:
+    parts = []
     if context.get("source"):
         parts.append(context["source"])
     elif context.get("tag"):
@@ -56,6 +52,18 @@ def describe_candidate(candidate: ExtractionCandidate) -> str:
     if context.get("label"):
         parts.append(f"nearby label: {context['label']}")
     return " | ".join(parts)
+
+
+def describe_candidate(candidate: ExtractionCandidate) -> str:
+    """e.g. ``"In stock" | <p class=instock> ; also at <td> | nearby label: Availability``"""
+    text = candidate.text
+    if len(text) > MAX_DESCRIPTION_TEXT:
+        text = text[:MAX_DESCRIPTION_TEXT] + "…"
+    # A value repeated all over the page (e.g. "Add to basket") would make a very long description.
+    places = [_describe_place(context) for context in candidate.contexts[:MAX_DESCRIBED_PLACES]]
+    places_text = " ; also at ".join(place for place in places if place)
+    quoted_text = json.dumps(text, ensure_ascii=False)
+    return f"{quoted_text} | {places_text}" if places_text else quoted_text
 
 
 def build_jev_state(url: str, page: ParsedPage) -> dict[str, str]:

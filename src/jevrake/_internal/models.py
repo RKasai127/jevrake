@@ -64,7 +64,7 @@ class ExtractionCandidate(BaseModel):
 
     text: str
     normalized_value: Any
-    context: dict[str, str] = {}
+    contexts: list[dict[str, str]] = []
 
 
 class ItemBlock(BaseModel):
