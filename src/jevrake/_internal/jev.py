@@ -81,6 +81,7 @@ def build_jev_request(
     for item_no, candidates_by_target in candidates_by_item.items():
         for target in targets:
             key = build_question_key(target.name, item_no)
+            # The first ones in page order; one choice is left for __none__.
             option_candidates = candidates_by_target.get(target.name, [])[: MAX_CHOICES - 1]
             if not option_candidates:
                 request.skipped_keys.append(key)

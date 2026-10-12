@@ -65,7 +65,6 @@ class ExtractionCandidate(BaseModel):
     text: str
     normalized_value: Any
     context: dict[str, str] = {}
-    score: float = 0.0
 
 
 class ItemBlock(BaseModel):

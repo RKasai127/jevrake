@@ -1,4 +1,4 @@
-# jevrake 仕様書（v0.1.0）
+# jevrake 仕様書
 
 ## 1. 概要
 
@@ -90,7 +90,7 @@ class RakeResult[T](BaseModel):  # 1ページ分
 
 ### 3.4 値が取れなかったときの扱い
 
-Jev が「該当なし」を選んだ、候補が1つもない、確信度が `min_confidence` 未満のいずれかの場合：
+Jev が「該当なし」を選んだ場合、候補が1つもない場合、確信度が `min_confidence` 未満の場合は、項目の種類ごとに次のように扱う。
 
 - **任意項目**：エラーにせず `None`（既定値）にする
 - **必須項目**：その件だけを捨て、`errors` に理由を残す（例：`item 2: address: no matching value (Jev chose __none__)`）。ほかの件は残す
@@ -139,7 +139,7 @@ jevrake URL... --fields JSON [-o FILE] [--min-confidence FLOAT] [--delay FLOAT] 
 | コード | 意味 |
 |---|---|
 | `0` | 成功 |
-| `1` | 一部失敗（取得失敗のページ、捨てた件がある） |
+| `1` | 一部失敗（取得に失敗したページや、捨てた件がある） |
 | `2` | 入力エラー（`--fields` の誤りなど） |
 | `3` | 認証エラー（APIキー未設定・拒否） |
 
@@ -155,6 +155,29 @@ jevrake URL... --fields JSON [-o FILE] [--min-confidence FLOAT] [--delay FLOAT] 
 - 採ったグループのブロックは、条件を満たさないものも含めてすべて1件として扱う（欠けた値は 3.4 のとおり処理する）
 
 しきい値は collect.py の定数（`MIN_LIST_ITEMS = 3`、`MIN_LIST_TEXT_RATIO = 0.5`、`MAX_SHORT_TEXT_CHARS = 40`）。
+
+### 5.1 しきい値の根拠
+
+各ページで「1件らしいブロック」が最も多いグループの件数と、そのグループがページ全体のテキストに占める割合を示す。詳細ページでは、割合が最大のグループも併記する。必須項目は str 1つとして測定した。
+
+| 種類 | ページ | 件数 / 割合 |
+|---|---|---|
+| 一覧 | books.toscrape.com トップ | 20件 / 57% |
+| 一覧 | quotes.toscrape.com トップ | 10件 / 93% |
+| 一覧 | scrapethissite.com（国一覧） | 86件 / 100% |
+| 一覧 | scrapethissite.com（チーム表） | 25件 / 59% |
+| 一覧 | webscraper.io（ノートPC一覧） | 117件 / 99% |
+| 一覧 | Hacker News トップ | 30件 / 54% |
+| 詳細 | books.toscrape.com 商品詳細 | 7件 / 10% |
+| 詳細 | webscraper.io 商品詳細 | グループなし |
+| 詳細 | quotes.toscrape.com 著者ページ | グループなし |
+| 詳細 | python.org トップ | 6件 / 9%（最大割合は 5件 / 44%） |
+| 詳細 | en.wikipedia.org 記事 | 39件 / 21%（最大割合は 10件 / 25%） |
+| 詳細 | github.com リポジトリ | 10件 / 8% |
+
+- 件数だけでは分けられない：グループのある詳細ページはすべて3件以上のグループを持つ。`MIN_LIST_ITEMS = 3` は最低条件にすぎない
+- 一覧と詳細を分けているのは割合：一覧は 54〜100%、詳細は最大 44%。0.5 は全ページを正しく分ける
+- ただし余裕は小さい（一覧の最小 54%、詳細の最大 44%）。判定ミスが実際に起きたら、利用者が一覧かどうかを指定する方式を検討する
 
 ## 6. Jev との連携
 
@@ -180,8 +203,8 @@ Jev に送る文面はすべて英語。
 | 選択肢の説明 | `"¥3,980" \| <span class=price> \| nearby label: 販売価格`（テキストは200文字で切る） |
 | 該当なし | `__none__`：`None of these is the requested value.` |
 
-- 一覧ページの質問文に件の番号は入れない（Jev がページ上の何件目かを数え違えるため。選択肢はその件のブロック内の候補だけ）
-- 選択肢は最大255個。候補が多い場合は点数の高い254個に絞る（点数はラベルと項目名・説明の一致、class 名、見出し、出現頻度、通貨記号の有無など）
+- 番号を入れると Jev がページ上の何件目かを数え違えるため、一覧ページの質問文に件の番号は入れない。選択肢は、その件のブロック内の候補だけにする
+- 選択肢は最大255個。候補が多い場合は、ページ上の先頭から254個を使う（残り1つは `__none__`）
 - ページのテキストは質問文に入れず、state と選択肢の説明にだけ入れる
 
 ### 6.3 エラー処理
@@ -226,7 +249,7 @@ src/jevrake/
     ├── api.py         rake()：処理の流れ
     ├── fetch.py       HTML の取得とレート制限
     ├── dom.py         HTML の整理、テキスト要素と繰り返しブロックの抽出
-    ├── collect.py     一覧の判定、候補集め、絞り込み
+    ├── collect.py     一覧の判定、候補集め
     ├── convert.py     テキストから型への変換（"¥3,980" → 3980）
     ├── jev.py         質問の組み立てと回答の解釈（通信しない）
     ├── client.py      Jev API との通信
@@ -240,7 +263,7 @@ docs/spec.md           この仕様書
 
 ## 11. テスト
 
-- すべてネットワークなしで実行できる。HTTP は `httpx.MockTransport`（Jev SDK は `httpx2.MockTransport`）で差し替え、Jev は決められた回答を返すフェイクに差し替える（`monkeypatch` で `api.HttpxFetcher` / `api.TypeSafeJevClient` を置き換える）
+- すべてネットワークなしで実行できる。HTTP の通信は `httpx.MockTransport`（Jev SDK は `httpx2.MockTransport`）で差し替える。Jev は、決められた回答を返すフェイクに差し替える。差し替えには `monkeypatch` を使い、`api.HttpxFetcher` / `api.TypeSafeJevClient` を置き換える
 - 各テストは「準備 → 実行 → 確認」の3段を空行で区切る
 - 実際の Jev API を呼ぶテスト（E2E）は対象外
 
