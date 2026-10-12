@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, ValidationError, create_model
 from .exceptions import SchemaError
 from .models import ExtractionKind, ExtractionTarget, TargetDefinition
 
-_PY_TYPES: dict[ExtractionKind, type] = {
+_PYTHON_TYPES: dict[ExtractionKind, type] = {
     "str": str,
     "int": int,
     "float": float,
@@ -25,10 +25,10 @@ _PY_TYPES: dict[ExtractionKind, type] = {
 
 def _split_optional_type(annotation: Any) -> tuple[Any, bool]:
     if get_origin(annotation) in (Union, types.UnionType):
-        args = [a for a in get_args(annotation) if a is not type(None)]
-        nullable = len(args) != len(get_args(annotation))
-        if len(args) == 1:
-            return args[0], nullable
+        non_none_types = [arg for arg in get_args(annotation) if arg is not type(None)]
+        is_nullable = len(non_none_types) != len(get_args(annotation))
+        if len(non_none_types) == 1:
+            return non_none_types[0], is_nullable
     return annotation, False
 
 
@@ -36,26 +36,28 @@ def _find_extraction_kind(annotation: Any) -> ExtractionKind | None:
     # bool is a subclass of int but is not supported.
     if not isinstance(annotation, type) or issubclass(annotation, bool):
         return None
-    for kind, py_type in _PY_TYPES.items():
-        if issubclass(annotation, py_type):
+    for kind, python_type in _PYTHON_TYPES.items():
+        if issubclass(annotation, python_type):
             return kind
     return None
 
 
 def build_targets_from_model(model: type[BaseModel]) -> list[ExtractionTarget]:
     targets = []
-    for name, info in model.model_fields.items():
-        annotation, nullable = _split_optional_type(info.annotation)
-        found = _find_extraction_kind(annotation)
-        if found is None:
-            raise SchemaError(f"{model.__name__}.{name}: unsupported type {info.annotation!r}")
+    for name, field_info in model.model_fields.items():
+        annotation, is_nullable = _split_optional_type(field_info.annotation)
+        kind = _find_extraction_kind(annotation)
+        if kind is None:
+            raise SchemaError(
+                f"{model.__name__}.{name}: unsupported type {field_info.annotation!r}"
+            )
         targets.append(
             ExtractionTarget(
                 name=name,
-                description=info.description or name,
-                kind=found,
-                nullable=nullable,
-                required=info.is_required(),
+                description=field_info.description or name,
+                kind=kind,
+                is_nullable=is_nullable,
+                is_required=field_info.is_required(),
             )
         )
     if not targets:
@@ -63,13 +65,13 @@ def build_targets_from_model(model: type[BaseModel]) -> list[ExtractionTarget]:
     return targets
 
 
-def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+def _reject_duplicate_keys(key_value_pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     """Used for every JSON object, so it may be a field name or a key such as ``type``."""
-    names = [name for name, _ in pairs]
-    for name in names:
-        if names.count(name) > 1:
-            raise SchemaError(f"--fields: duplicate key {name!r}")
-    return dict(pairs)
+    keys = [key for key, _ in key_value_pairs]
+    for key in keys:
+        if keys.count(key) > 1:
+            raise SchemaError(f"--fields: duplicate key {key!r}")
+    return dict(key_value_pairs)
 
 
 def build_model_from_fields_json(text: str) -> type[BaseModel]:
@@ -78,28 +80,28 @@ def build_model_from_fields_json(text: str) -> type[BaseModel]:
     Each entry is either a description string or ``{"description": ..., "type": ...}``.
     """
     try:
-        raw = json.loads(text, object_pairs_hook=_reject_duplicate_keys)
+        fields_json = json.loads(text, object_pairs_hook=_reject_duplicate_keys)
     except json.JSONDecodeError as e:
         raise SchemaError(f"--fields is not valid JSON: {e}") from None
-    if not isinstance(raw, dict) or not raw:
+    if not isinstance(fields_json, dict) or not fields_json:
         raise SchemaError("--fields must be a non-empty JSON object")
 
-    definitions: dict[str, Any] = {}
-    for name, value in raw.items():
+    field_definitions: dict[str, Any] = {}
+    for name, field_json in fields_json.items():
         if not name.isidentifier() or name.startswith("_"):
             raise SchemaError(
                 f"--fields: invalid field name {name!r} (use an identifier starting with a letter)"
             )
-        if isinstance(value, str):
-            value = {"description": value}
+        if isinstance(field_json, str):
+            field_json = {"description": field_json}
         try:
-            definition = TargetDefinition.model_validate(value)
+            definition = TargetDefinition.model_validate(field_json)
         except ValidationError as e:
-            error = e.errors()[0]
-            location = ".".join(str(part) for part in (name, *error["loc"]))
-            raise SchemaError(f"--fields.{location}: {error['msg']}") from None
-        definitions[name] = (
-            _PY_TYPES[definition.type] | None,
+            first_error = e.errors()[0]
+            location = ".".join(str(part) for part in (name, *first_error["loc"]))
+            raise SchemaError(f"--fields.{location}: {first_error['msg']}") from None
+        field_definitions[name] = (
+            _PYTHON_TYPES[definition.type] | None,
             Field(default=None, description=definition.description),
         )
-    return create_model("Record", **definitions)
+    return create_model("Record", **field_definitions)

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 import typesafe_sdk as ts
 
@@ -29,12 +29,8 @@ Create an API key at https://console.typesafe.ai and set it with one of:
   cp .envrc.example .envrc  # fill in the key, then run `direnv allow`"""
 
 
-class JevClient(Protocol):
-    def ask(self, state: Mapping[str, Any], questions: Mapping[str, Any]) -> JevResponse: ...
-
-
 class TypeSafeJevClient:
-    """:class:`JevClient` backed by ``typesafe_sdk.TypeSafeClient``.
+    """Jev client backed by ``typesafe_sdk.TypeSafeClient``.
 
     429 / 5xx responses are retried with exponential backoff (up to ``MAX_RETRIES`` times) by
     the SDK's retry policy.
@@ -69,10 +65,12 @@ class TypeSafeJevClient:
 
         return JevResponse(
             choices={
-                name: JevChoiceAnswer(
-                    choice=a.choice, confidence=a.confidence, probabilities=dict(a.probabilities)
+                key: JevChoiceAnswer(
+                    choice=answer.choice,
+                    confidence=answer.confidence,
+                    probabilities=dict(answer.probabilities),
                 )
-                for name, a in response.choices.items()
+                for key, answer in response.choices.items()
             },
             request_id=response.request_id,
         )

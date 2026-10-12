@@ -68,8 +68,8 @@ def _get_ancestors(node: Node) -> list[Node]:
 
 
 def _get_own_text(node: Node) -> str:
-    parts = [child.text() for child in node.iter(include_text=True) if child.tag == "-text"]
-    return " ".join(" ".join(parts).split())
+    text_parts = [child.text() for child in node.iter(include_text=True) if child.tag == "-text"]
+    return " ".join(" ".join(text_parts).split())
 
 
 def _get_full_text(node: Node) -> str:
@@ -93,51 +93,53 @@ def _find_label(node: Node) -> str | None:
 
     Looks at the node itself and its parent only; going further up tends to pick unrelated text.
     """
-    current: Node | None = node
+    current_node: Node | None = node
     for _ in range(2):
-        if not _is_element(current):
+        if not _is_element(current_node):
             return None
-        if current.tag in ("td", "th", "dd"):
-            prev = _find_previous_element(current)
-            if prev is not None and prev.tag in ("th", "td", "dt"):
-                return _keep_if_short(_get_full_text(prev))
-        prev = _find_previous_element(current)
-        if prev is not None:
-            label = _keep_if_short(_get_full_text(prev))
+        previous_element = _find_previous_element(current_node)
+        if previous_element is not None:
+            if current_node.tag in ("td", "th", "dd") and previous_element.tag in (
+                "th",
+                "td",
+                "dt",
+            ):
+                return _keep_if_short(_get_full_text(previous_element))
+            label = _keep_if_short(_get_full_text(previous_element))
             if label:
                 return label
-        for attr in ("aria-label", "itemprop"):
-            if current.attributes.get(attr):
-                return _keep_if_short(current.attributes[attr] or "")
-        current = current.parent
+        for attr_name in ("aria-label", "itemprop"):
+            if current_node.attributes.get(attr_name):
+                return _keep_if_short(current_node.attributes[attr_name] or "")
+        current_node = current_node.parent
     return None
 
 
 def _find_heading_level(node: Node) -> int | None:
-    current: Node | None = node
+    current_node: Node | None = node
     for _ in range(3):
-        if not _is_element(current):
+        if not _is_element(current_node):
             return None
-        tag = _get_tag(current)
+        tag = _get_tag(current_node)
         if re.fullmatch(r"h[1-6]", tag):
             return int(tag[1])
-        current = current.parent
+        current_node = current_node.parent
     return None
 
 
 def _build_main_text(body: Node) -> str:
     lines: list[str] = []
-    buffer: list[str] = []
+    line_parts: list[str] = []
 
     def add_line() -> None:
-        line = " ".join(" ".join(buffer).split())
+        line = " ".join(" ".join(line_parts).split())
         if line:
             lines.append(line)
-        buffer.clear()
+        line_parts.clear()
 
     for node in body.traverse(include_text=True):
         if node.tag == "-text":
-            buffer.append(node.text())
+            line_parts.append(node.text())
         elif node.tag in _BLOCK_TAGS:
             add_line()
     add_line()
@@ -150,32 +152,41 @@ def _find_repeated_blocks(body: Node) -> list[list[Node]]:
     for parent in body.traverse():
         if not _is_element(parent):
             continue
-        by_shape: dict[tuple[str, str], list[Node]] = {}
+        children_by_shape: dict[tuple[str, str], list[Node]] = {}
         for child in parent.iter():
             if _is_element(child) and _get_full_text(child):
                 shape = (_get_tag(child), child.attributes.get("class") or "")
-                by_shape.setdefault(shape, []).append(child)
-        groups.extend(b for b in by_shape.values() if len(b) >= MIN_REPEATED_BLOCKS)
+                children_by_shape.setdefault(shape, []).append(child)
+        groups.extend(
+            children
+            for children in children_by_shape.values()
+            if len(children) >= MIN_REPEATED_BLOCKS
+        )
     return groups
 
 
 def parse_page(html: str) -> ParsedPage:
-    raw = HTMLParser(html)
-    title_node = raw.css_first("title")
+    raw_tree = HTMLParser(html)
+    title_node = raw_tree.css_first("title")
     title = " ".join(title_node.text().split()) if title_node else None
-    og_node = raw.css_first('meta[property="og:title"]')
-    og_title = (og_node.attributes.get("content") or "").strip() or None if og_node else None
+    og_title_node = raw_tree.css_first('meta[property="og:title"]')
+    og_title = (
+        (og_title_node.attributes.get("content") or "").strip() or None if og_title_node else None
+    )
 
-    tree = clean_html(html)
-    body = tree.body
+    body = clean_html(html).body
     if body is None:
         return ParsedPage(title=title or None, og_title=og_title, main_text="", elements=[])
 
-    block_nodes = _find_repeated_blocks(body)
-    block_index = {
-        node.mem_id: (g, b) for g, group in enumerate(block_nodes) for b, node in enumerate(group)
-    }
-    repeated_groups: list[list[list[TextElement]]] = [[[] for _ in g] for g in block_nodes]
+    block_node_groups = _find_repeated_blocks(body)
+    # Keyed by mem_id, not by the node: selectolax returns a new Node object each time.
+    block_position: dict[int, tuple[int, int]] = {}
+    for group_no, block_nodes in enumerate(block_node_groups):
+        for block_no, block_node in enumerate(block_nodes):
+            block_position[block_node.mem_id] = (group_no, block_no)
+    repeated_groups: list[list[list[TextElement]]] = [
+        [[] for _ in block_nodes] for block_nodes in block_node_groups
+    ]
 
     elements: list[TextElement] = []
     for node in body.traverse():
@@ -187,15 +198,15 @@ def parse_page(html: str) -> ParsedPage:
         element = TextElement(
             text=text,
             tag=_get_tag(node),
-            attrs={k: v or "" for k, v in node.attributes.items()},
+            attrs={name: value or "" for name, value in node.attributes.items()},
             label=_find_label(node),
             heading_level=_find_heading_level(node),
         )
         elements.append(element)
         for container in (node, *_get_ancestors(node)):
-            if container.mem_id in block_index:
-                g, b = block_index[container.mem_id]
-                repeated_groups[g][b].append(element)
+            if container.mem_id in block_position:
+                group_no, block_no = block_position[container.mem_id]
+                repeated_groups[group_no][block_no].append(element)
 
     return ParsedPage(
         title=title or None,

@@ -35,9 +35,9 @@ ITEM_CHOICE_INSTRUCTIONS = (
 )
 
 
-def build_question_key(name: str, item: int | None) -> str:
+def build_question_key(name: str, item_no: int | None) -> str:
     """``price`` for a single-record page, ``item3.price`` for item 3 of a list page."""
-    return name if item is None else f"item{item}.{name}"
+    return name if item_no is None else f"item{item_no}.{name}"
 
 
 def describe_candidate(candidate: ExtractionCandidate) -> str:
@@ -46,15 +46,15 @@ def describe_candidate(candidate: ExtractionCandidate) -> str:
     if len(text) > MAX_DESCRIPTION_TEXT:
         text = text[:MAX_DESCRIPTION_TEXT] + "…"
     parts = [json.dumps(text, ensure_ascii=False)]
-    ctx = candidate.context
-    if ctx.get("source"):
-        parts.append(ctx["source"])
-    elif ctx.get("tag"):
-        parts.append(ctx["tag"])
-    if ctx.get("heading"):
-        parts.append(f"heading {ctx['heading']}")
-    if ctx.get("label"):
-        parts.append(f"nearby label: {ctx['label']}")
+    context = candidate.context
+    if context.get("source"):
+        parts.append(context["source"])
+    elif context.get("tag"):
+        parts.append(context["tag"])
+    if context.get("heading"):
+        parts.append(f"heading {context['heading']}")
+    if context.get("label"):
+        parts.append(f"nearby label: {context['label']}")
     return " | ".join(parts)
 
 
@@ -78,24 +78,26 @@ def build_jev_request(
     candidates of each target in that item.
     """
     request = JevRequest(state=build_jev_state(url, page))
-    for item, candidates in candidates_by_item.items():
+    for item_no, candidates_by_target in candidates_by_item.items():
         for target in targets:
-            key = build_question_key(target.name, item)
-            chosen = candidates.get(target.name, [])[: MAX_CHOICES - 1]
-            if not chosen:
-                request.skipped.append(key)
+            key = build_question_key(target.name, item_no)
+            option_candidates = candidates_by_target.get(target.name, [])[: MAX_CHOICES - 1]
+            if not option_candidates:
+                request.skipped_keys.append(key)
                 continue
-            names = [f"c{i}" for i in range(len(chosen))]
-            criteria = {n: describe_candidate(c) for n, c in zip(names, chosen, strict=True)}
+            option_names = [f"c{i}" for i in range(len(option_candidates))]
+            candidate_by_option = dict(zip(option_names, option_candidates, strict=True))
+            criteria = {
+                option_name: describe_candidate(candidate)
+                for option_name, candidate in candidate_by_option.items()
+            }
             criteria[NONE_CHOICE] = NONE_DESCRIPTION
-            template = CHOICE_INSTRUCTIONS if item is None else ITEM_CHOICE_INSTRUCTIONS
+            instructions = CHOICE_INSTRUCTIONS if item_no is None else ITEM_CHOICE_INSTRUCTIONS
             request.questions[key] = Choice(
-                instructions=template.format(
-                    description=target.description, name=target.name, item=item
-                ),
+                instructions=instructions.format(description=target.description, name=target.name),
                 criteria=criteria,
             )
-            request.options[key] = dict(zip(names, chosen, strict=True))
+            request.options_by_question[key] = candidate_by_option
     return request
 
 
@@ -105,8 +107,8 @@ def build_jev_payload(request: JevRequest, model: str) -> dict[str, Any]:
         "model": model,
         "state": request.state,
         "questions": {
-            name: q.model_dump(mode="json", exclude_none=True)
-            for name, q in request.questions.items()
+            key: question.model_dump(mode="json", exclude_none=True)
+            for key, question in request.questions.items()
         },
     }
 
@@ -116,7 +118,7 @@ def _record_missing_value(
 ) -> None:
     if not target.is_optional:
         errors.append(f"{target.name}: {reason}")
-    elif target.required:
+    elif target.is_required:
         values[target.name] = None
 
 
@@ -125,7 +127,7 @@ def parse_jev_response(
     response: JevResponse,
     targets: list[ExtractionTarget],
     min_confidence: float,
-    item: int | None = None,
+    item_no: int | None = None,
 ) -> ExtractionOutcome:
     """Turn Jev's answers for one item (``None`` for a single-record page) into values."""
     fields: dict[str, ExtractedValue] = {}
@@ -134,8 +136,8 @@ def parse_jev_response(
 
     for target in targets:
         name = target.name
-        key = build_question_key(name, item)
-        if key in request.skipped:
+        key = build_question_key(name, item_no)
+        if key in request.skipped_keys:
             fields[name] = ExtractedValue(value=None, confidence=None, probability=0.0, source=None)
             _record_missing_value(target, values, errors, "no candidates found on the page")
             continue
@@ -151,7 +153,7 @@ def parse_jev_response(
             )
             _record_missing_value(target, values, errors, "no matching value (Jev chose __none__)")
             continue
-        candidate = request.options[key].get(answer.choice)
+        candidate = request.options_by_question[key].get(answer.choice)
         if candidate is None:
             errors.append(f"{name}: Jev returned an unknown choice: {answer.choice!r}")
             continue

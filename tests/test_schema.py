@@ -33,9 +33,9 @@ def test_targets_from_model() -> None:
     assert targets["title"].description == "商品名"
     assert targets["rating"].description == "rating"
     assert targets["note"].is_optional
-    assert not targets["note"].required
-    assert targets["quantity"].nullable
-    assert targets["quantity"].required
+    assert not targets["note"].is_required
+    assert targets["quantity"].is_nullable
+    assert targets["quantity"].is_required
     assert not targets["price"].is_optional
 
 

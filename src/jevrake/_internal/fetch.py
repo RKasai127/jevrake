@@ -6,7 +6,6 @@ Waits ``delay`` seconds between requests to the same site so the site is not ove
 from __future__ import annotations
 
 import time
-from typing import Protocol
 from urllib.parse import urlsplit
 
 import httpx
@@ -18,14 +17,9 @@ DEFAULT_DELAY = 1.0
 TIMEOUT = 30.0
 
 
-class Fetcher(Protocol):
-    def fetch(self, url: str) -> str:
-        """Return the HTML of ``url``. Raises :class:`FetchError`."""
-
-
 def _get_origin(url: str) -> str:
-    parts = urlsplit(url)
-    return f"{parts.scheme}://{parts.netloc}"
+    split_url = urlsplit(url)
+    return f"{split_url.scheme}://{split_url.netloc}"
 
 
 class HttpxFetcher:
@@ -42,17 +36,17 @@ class HttpxFetcher:
             follow_redirects=True,
             transport=transport,
         )
-        self._last_access: dict[str, float] = {}
+        self._last_access_by_origin: dict[str, float] = {}
 
     def _get_with_delay(self, url: str) -> httpx.Response:
         """GET ``url`` after waiting so requests to the same host are ``delay`` seconds apart."""
         origin = _get_origin(url)
-        last = self._last_access.get(origin)
-        if last is not None:
-            wait = last + self.delay - time.monotonic()
-            if wait > 0:
-                time.sleep(wait)
-        self._last_access[origin] = time.monotonic()
+        last_access = self._last_access_by_origin.get(origin)
+        if last_access is not None:
+            wait_seconds = last_access + self.delay - time.monotonic()
+            if wait_seconds > 0:
+                time.sleep(wait_seconds)
+        self._last_access_by_origin[origin] = time.monotonic()
         return self._client.get(url)
 
     def fetch(self, url: str) -> str:
@@ -67,7 +61,8 @@ class HttpxFetcher:
         if not response.is_success:
             raise FetchError(f"HTTP {response.status_code}: {url}")
         content_type = response.headers.get("content-type", "")
-        if content_type and not any(t in content_type for t in ("html", "xml", "text/plain")):
+        is_html = any(kind in content_type for kind in ("html", "xml", "text/plain"))
+        if content_type and not is_html:
             raise FetchError(f"not an HTML page ({content_type}): {url}")
         return response.text
 

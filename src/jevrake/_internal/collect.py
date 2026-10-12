@@ -20,17 +20,17 @@ MAX_CANDIDATES = 254  # plus "__none__" = 255 choices
 MAX_TEXT_CHARS = 200
 _PREFIX_LABEL_CHARS = 20
 MIN_LIST_ITEMS = 3
-MIN_LIST_TEXT_SHARE = 0.5
+MIN_LIST_TEXT_RATIO = 0.5
 MAX_SHORT_TEXT_CHARS = 40
 
 
 def _format_tag(element: TextElement) -> str:
-    attrs = "".join(
-        f" {key}={element.attrs[key]}"
-        for key in ("class", "id", "itemprop")
-        if element.attrs.get(key)
+    attr_text = "".join(
+        f" {attr_name}={element.attrs[attr_name]}"
+        for attr_name in ("class", "id", "itemprop")
+        if element.attrs.get(attr_name)
     )
-    return f"<{element.tag}{attrs}>"
+    return f"<{element.tag}{attr_text}>"
 
 
 def _build_context(element: TextElement, label: str | None = None) -> dict[str, str]:
@@ -75,12 +75,13 @@ def _find_text_candidates(page: ParsedPage, block: ItemBlock) -> Iterator[Extrac
 def _find_number_candidates(block: ItemBlock) -> Iterator[ExtractionCandidate]:
     for element in block.elements:
         text = normalize_text(element.text)
-        for m in NUMBER_RE.finditer(text):
-            context = _build_context(element, _find_prefix_label(text, m.start()))
-            if m.group("prefix") or m.group("suffix"):
-                context["unit"] = (m.group("prefix") or m.group("suffix")).strip()
+        for match in NUMBER_RE.finditer(text):
+            context = _build_context(element, _find_prefix_label(text, match.start()))
+            unit = match.group("prefix") or match.group("suffix")
+            if unit:
+                context["unit"] = unit.strip()
             yield ExtractionCandidate(
-                text=m.group(0).strip(),
+                text=match.group(0).strip(),
                 normalized_value=None,
                 context=context,
             )
@@ -88,34 +89,34 @@ def _find_number_candidates(block: ItemBlock) -> Iterator[ExtractionCandidate]:
 
 def _split_terms(text: str) -> set[str]:
     """Matching terms: whole words for Latin text, character bigrams for CJK text."""
-    s = normalize_text(text).lower()
-    terms = {w for w in re.findall(r"[a-z]{3,}", s)}
-    for run in re.findall(r"[^\x00-\x7f\s\W]+", s):
-        terms |= {run[i : i + 2] for i in range(len(run) - 1)}
+    normalized_text = normalize_text(text).lower()
+    terms = set(re.findall(r"[a-z]{3,}", normalized_text))
+    for cjk_text in re.findall(r"[^\x00-\x7f\s\W]+", normalized_text):
+        terms |= {cjk_text[i : i + 2] for i in range(len(cjk_text) - 1)}
     return terms
 
 
 def _calculate_score(
-    candidate: ExtractionCandidate, target: ExtractionTarget, frequency: int
+    candidate: ExtractionCandidate, target: ExtractionTarget, same_value_count: int
 ) -> float:
-    ctx = candidate.context
+    context = candidate.context
     score = 0.0
     name_terms = _split_terms(target.name.replace("_", " "))
-    wanted = _split_terms(target.description) | name_terms
-    label = ctx.get("label")
+    wanted_terms = _split_terms(target.description) | name_terms
+    label = context.get("label")
     if label:
         score += 1.0
-        if _split_terms(label) & wanted:
+        if _split_terms(label) & wanted_terms:
             score += 2.0
-    if _split_terms(ctx.get("tag", "").replace("-", " ").replace("_", " ")) & name_terms:
+    if _split_terms(context.get("tag", "").replace("-", " ").replace("_", " ")) & name_terms:
         score += 1.5
-    heading = ctx.get("heading")
+    heading = context.get("heading")
     if heading and target.kind == "str":
         score += {"h1": 3.0, "h2": 2.0}.get(heading, 1.0)
-    if ctx.get("source"):
+    if context.get("source"):
         score += 3.0
-    score += 0.5 * min(frequency - 1, 3)
-    if target.kind != "str" and ctx.get("unit"):
+    score += 0.5 * min(same_value_count - 1, 3)
+    if target.kind != "str" and context.get("unit"):
         score += 1.0
     if target.kind == "str" and len(candidate.text) > 80:
         score -= 1.0
@@ -124,50 +125,56 @@ def _calculate_score(
 
 def remove_duplicates(candidates: list[ExtractionCandidate]) -> list[ExtractionCandidate]:
     """Keep one candidate per ``normalized_value``: the one with the most context."""
-    best: dict[Any, int] = {}
-    for i, candidate in enumerate(candidates):
-        key = candidate.normalized_value
-        if key not in best or len(candidate.context) > len(candidates[best[key]].context):
-            best[key] = i
-    return [candidates[i] for i in sorted(best.values())]
+    index_by_value: dict[Any, int] = {}
+    for index, candidate in enumerate(candidates):
+        value = candidate.normalized_value
+        kept_index = index_by_value.get(value)
+        if kept_index is None or len(candidate.context) > len(candidates[kept_index].context):
+            index_by_value[value] = index
+    return [candidates[index] for index in sorted(index_by_value.values())]
 
 
 def keep_top_candidates(candidates: list[ExtractionCandidate]) -> list[ExtractionCandidate]:
     """Keep the ``MAX_CANDIDATES`` highest-scoring candidates, preserving document order."""
     if len(candidates) <= MAX_CANDIDATES:
         return candidates
-    ranked = sorted(range(len(candidates)), key=lambda i: -candidates[i].score)
-    keep = sorted(ranked[:MAX_CANDIDATES])
-    return [candidates[i] for i in keep]
+    indexes_by_score = sorted(range(len(candidates)), key=lambda index: -candidates[index].score)
+    kept_indexes = sorted(indexes_by_score[:MAX_CANDIDATES])
+    return [candidates[index] for index in kept_indexes]
 
 
 def generate_candidates(
     page: ParsedPage, block: ItemBlock, target: ExtractionTarget
 ) -> list[ExtractionCandidate]:
-    converted: list[ExtractionCandidate] = []
+    converted_candidates: list[ExtractionCandidate] = []
     raw_candidates = (
         _find_text_candidates(page, block)
         if target.kind == "str"
         else _find_number_candidates(block)
     )
-    for raw in raw_candidates:
+    for raw_candidate in raw_candidates:
         try:
-            value = convert_text(raw.text, target.kind)
+            value = convert_text(raw_candidate.text, target.kind)
         except CoercionError:
             continue
-        converted.append(raw.model_copy(update={"normalized_value": value}))
+        converted_candidates.append(raw_candidate.model_copy(update={"normalized_value": value}))
 
-    frequency = Counter(c.normalized_value for c in converted)
-    unique = remove_duplicates(converted)
-    scored = [
-        c.model_copy(update={"score": _calculate_score(c, target, frequency[c.normalized_value])})
-        for c in unique
+    count_by_value = Counter(candidate.normalized_value for candidate in converted_candidates)
+    scored_candidates = [
+        candidate.model_copy(
+            update={
+                "score": _calculate_score(
+                    candidate, target, count_by_value[candidate.normalized_value]
+                )
+            }
+        )
+        for candidate in remove_duplicates(converted_candidates)
     ]
-    return keep_top_candidates(scored)
+    return keep_top_candidates(scored_candidates)
 
 
 def _count_text(elements: list[TextElement]) -> int:
-    return sum(len(e.text) for e in elements)
+    return sum(len(element.text) for element in elements)
 
 
 def _build_block(
@@ -178,8 +185,10 @@ def _build_block(
 ) -> ItemBlock:
     """Make a block and collect the candidates of every target in it."""
     block = ItemBlock(elements=elements, is_whole_page=is_whole_page)
-    candidates = {t.name: generate_candidates(page, block, t) for t in targets}
-    return block.model_copy(update={"candidates": candidates})
+    candidates_by_target = {
+        target.name: generate_candidates(page, block, target) for target in targets
+    }
+    return block.model_copy(update={"candidates_by_target": candidates_by_target})
 
 
 def find_item_blocks(page: ParsedPage, targets: list[ExtractionTarget]) -> list[ItemBlock]:
@@ -190,21 +199,22 @@ def find_item_blocks(page: ParsedPage, targets: list[ExtractionTarget]) -> list[
     Every block of the chosen group is returned, so an item that misses a value is reported later
     instead of silently disappearing.
     """
-    required = [t for t in targets if not t.is_optional]
-    page_text = _count_text(page.elements)
-    best: list[ItemBlock] = []
-    best_items = 0
+    required_targets = [target for target in targets if not target.is_optional]
+    page_chars = _count_text(page.elements)
+    item_blocks: list[ItemBlock] = []
+    max_item_count = 0
     for group in page.repeated_groups:
         blocks = [_build_block(page, elements, False, targets) for elements in group]
-        items = sum(
+        item_count = sum(
             1
             for block in blocks
             if len(block.elements) >= 2
-            and any(len(e.text) <= MAX_SHORT_TEXT_CHARS for e in block.elements)
-            and all(block.candidates[t.name] for t in required)
+            and any(len(element.text) <= MAX_SHORT_TEXT_CHARS for element in block.elements)
+            and all(block.candidates_by_target[target.name] for target in required_targets)
         )
-        text_share = _count_text([e for b in blocks for e in b.elements]) / max(page_text, 1)
-        is_list = items >= MIN_LIST_ITEMS and text_share >= MIN_LIST_TEXT_SHARE
-        if is_list and items > best_items:
-            best, best_items = blocks, items
-    return best or [_build_block(page, page.elements, True, targets)]
+        group_chars = _count_text([element for block in blocks for element in block.elements])
+        is_main_content = group_chars >= page_chars * MIN_LIST_TEXT_RATIO
+        is_list = item_count >= MIN_LIST_ITEMS and is_main_content
+        if is_list and item_count > max_item_count:
+            item_blocks, max_item_count = blocks, item_count
+    return item_blocks or [_build_block(page, page.elements, True, targets)]

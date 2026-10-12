@@ -54,9 +54,11 @@ class Product(BaseModel):
 results = rake(["https://example.com/item/1"], Product)
 ```
 
+そのまま動かせる例は [examples/example.py](https://github.com/RKasai127/jevrake/blob/main/examples/example.py) にあります。
+
 jevrake は、ページ上から各項目の型に合う値をすべて集め、その中から説明に合うものを Jev に選ばせます。値は必ずページ上に実在するものから選ばれます。
 
-- 一覧ページにも対応しています。繰り返し並ぶ1件ずつ（一覧の各店舗など）が、それぞれ1レコードになります
+- 一覧ページにも対応しています。一覧の1件ずつ（各店舗など）が、それぞれ別々に出力されます
 - 型：`str`、`int`、`float`、`decimal`
 - 見つからなかった値や、確信度が0.9未満の値は `null` になります
 - robots.txt は確認しません。各サイトのルールを守るのは利用者の責任でお願いいたします。

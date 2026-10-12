@@ -29,7 +29,11 @@ TARGETS = [
     ExtractionTarget(name="title", description="商品名", kind="str"),
     ExtractionTarget(name="price", description="税込の販売価格（円）", kind="int"),
     ExtractionTarget(
-        name="list_price", description="通常価格", kind="decimal", nullable=True, required=False
+        name="list_price",
+        description="通常価格",
+        kind="decimal",
+        is_nullable=True,
+        is_required=False,
     ),
 ]
 
@@ -81,7 +85,7 @@ def test_choice_question_structure() -> None:
     assert names[-1] == NONE_CHOICE
     assert names[:-1] == [f"c{i}" for i in range(len(names) - 1)]
     assert price.criteria["c0"] == '"¥3,980" | <span class=price> | nearby label: 販売価格'
-    assert request.options["price"]["c0"].normalized_value == 3980
+    assert request.options_by_question["price"]["c0"].normalized_value == 3980
 
 
 def test_page_text_is_not_in_instructions() -> None:
@@ -102,7 +106,7 @@ def test_fields_without_candidates_are_skipped() -> None:
 
     request = build_jev_request(URL, page, TARGETS, {None: found})
 
-    assert request.skipped == ["price", "list_price"]
+    assert request.skipped_keys == ["price", "list_price"]
     assert set(request.questions) == {"title"}
 
 
@@ -180,7 +184,7 @@ def test_parse_jev_response_none_for_required_is_error() -> None:
 
 def test_parse_jev_response_nullable_required_field_gets_none() -> None:
     target = ExtractionTarget(
-        name="n", description="数量", kind="int", nullable=True, required=True
+        name="n", description="数量", kind="int", is_nullable=True, is_required=True
     )
     page = parse_page(load_fixture("empty_page.html"))
     request = build_jev_request(URL, page, [target], {None: {"n": []}})
@@ -233,8 +237,8 @@ def test_parse_jev_response_for_one_item() -> None:
     request = build_jev_request(URL, page, [target], candidates)
     response = _response(**{"item0.name": ("c0", 0.95), "item1.name": ("__none__", 0.95)})
 
-    first = parse_jev_response(request, response, [target], 0.9, item=0)
-    second = parse_jev_response(request, response, [target], 0.9, item=1)
+    first = parse_jev_response(request, response, [target], 0.9, item_no=0)
+    second = parse_jev_response(request, response, [target], 0.9, item_no=1)
 
     assert first.values == {"name": "A店"}
     assert second.errors == ["name: no matching value (Jev chose __none__)"]

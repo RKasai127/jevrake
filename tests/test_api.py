@@ -1,5 +1,5 @@
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from decimal import Decimal
 from typing import Any
 
@@ -37,10 +37,26 @@ def fetcher(**kwargs) -> HttpxFetcher:
     return HttpxFetcher(**kwargs)
 
 
-def test_rake_japanese_product() -> None:
-    jev = FakeJev(PICKS)
+Install = Callable[..., None]
 
-    result = rake([f"{BASE}/ja"], Product, fetcher=fetcher(), client=jev)[0]
+
+@pytest.fixture
+def install(monkeypatch: pytest.MonkeyPatch) -> Install:
+    """Make ``rake()`` use ``jev`` and ``page_fetcher`` (the fake site by default)."""
+
+    def install_fakes(jev: FakeJev, page_fetcher: Any = None) -> None:
+        used = page_fetcher if page_fetcher is not None else fetcher()
+        monkeypatch.setattr(api, "HttpxFetcher", lambda delay: used)
+        monkeypatch.setattr(api, "TypeSafeJevClient", lambda: jev)
+
+    return install_fakes
+
+
+def test_rake_japanese_product(install: Install) -> None:
+    jev = FakeJev(PICKS)
+    install(jev)
+
+    result = rake([f"{BASE}/ja"], Product)[0]
 
     assert result.errors == []
     assert len(result.items) == 1
@@ -58,30 +74,33 @@ def test_rake_japanese_product() -> None:
     assert "var price" not in call["state"]["main_text"]
 
 
-def test_values_below_min_confidence_are_discarded() -> None:
+def test_values_below_min_confidence_are_discarded(install: Install) -> None:
     jev = FakeJev(PICKS, confidence=0.3)
+    install(jev)
 
-    result = rake([f"{BASE}/ja"], Product, fetcher=fetcher(), client=jev)[0]
+    result = rake([f"{BASE}/ja"], Product)[0]
 
     assert result.items == []
     assert "price: confidence 0.30 is below 0.90 (rejected '¥3,980')" in result.errors
 
 
-def test_missing_required_value_gives_no_data() -> None:
+def test_missing_required_value_gives_no_data(install: Install) -> None:
     jev = FakeJev({})
+    install(jev)
 
-    result = rake([f"{BASE}/empty"], Product, fetcher=fetcher(), client=jev)[0]
+    result = rake([f"{BASE}/empty"], Product)[0]
 
     assert result.items == []
     assert "price: no candidates found on the page" in result.errors
     assert "title: no matching value (Jev chose __none__)" in result.errors
 
 
-def test_fetch_errors_are_collected() -> None:
+def test_fetch_errors_are_collected(install: Install) -> None:
     jev = FakeJev(PICKS)
     urls = [f"{BASE}/missing", f"{BASE}/image.png", "ftp://x/y", f"{BASE}/ja"]
+    install(jev)
 
-    results = rake(urls, Product, fetcher=fetcher(), client=jev)
+    results = rake(urls, Product)
 
     assert [r.url for r in results] == urls
     assert "HTTP 404" in results[0].errors[0]
@@ -91,16 +110,17 @@ def test_fetch_errors_are_collected() -> None:
     assert len(jev.calls) == 1
 
 
-def test_user_agent_sent_and_robots_txt_not_fetched() -> None:
+def test_user_agent_sent_and_robots_txt_not_fetched(install: Install) -> None:
     requests: list[httpx.Request] = []
+    install(FakeJev(), fetcher(transport=site(requests)))
 
-    rake([f"{BASE}/ja"], Product, fetcher=fetcher(transport=site(requests)), client=FakeJev())
+    rake([f"{BASE}/ja"], Product)
 
     assert [r.url.path for r in requests] == ["/ja"]
     assert requests[0].headers["user-agent"] == f"jevrake/{__version__}"
 
 
-def test_rate_limit_per_host() -> None:
+def test_rate_limit_per_host(install: Install) -> None:
     times: dict[str, list[float]] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -109,38 +129,41 @@ def test_rate_limit_per_host() -> None:
 
     f = HttpxFetcher(transport=httpx.MockTransport(handler), delay=0.2)
     urls = ["https://a.example/1", "https://b.example/1", "https://a.example/2"]
+    install(FakeJev(), f)
 
-    rake(urls, Product, fetcher=f, client=FakeJev())
+    rake(urls, Product)
 
     a, b = times["a.example"], times["b.example"]
     assert a[1] - a[0] >= 0.19
     assert b[0] - a[0] < 0.19
 
 
-def test_auth_error_stops_the_run() -> None:
+def test_auth_error_stops_the_run(install: Install) -> None:
     jev = FakeJev(error=AUTH_ERROR)
     urls = [f"{BASE}/ja", f"{BASE}/en"]
+    install(jev)
 
     with pytest.raises(JevAuthError):
-        rake(urls, Product, fetcher=fetcher(), client=jev)
+        rake(urls, Product)
 
 
-def test_other_jev_errors_are_per_page() -> None:
+def test_other_jev_errors_are_per_page(install: Install) -> None:
     jev = FakeJev(error=JevError("boom"))
+    install(jev)
 
-    result = rake([f"{BASE}/ja"], Product, fetcher=fetcher(), client=jev)[0]
+    result = rake([f"{BASE}/ja"], Product)[0]
 
     assert result.errors == ["boom"]
     assert result.items == []
 
 
-def test_dry_run_does_not_call_jev() -> None:
+def test_dry_run_does_not_call_jev(install: Install) -> None:
     seen = []
+    install(FakeJev())
 
     results = rake(
         [f"{BASE}/ja"],
         Product,
-        fetcher=fetcher(),
         dry_run=True,
         on_request=lambda url, payload: seen.append((url, payload)),
     )
@@ -167,10 +190,11 @@ SHOP_PICKS = {
 }
 
 
-def test_list_page_returns_one_item_per_shop() -> None:
+def test_list_page_returns_one_item_per_shop(install: Install) -> None:
     jev = FakeJev(SHOP_PICKS)
+    install(jev)
 
-    result = rake([f"{BASE}/shops"], Shop, fetcher=fetcher(), client=jev)[0]
+    result = rake([f"{BASE}/shops"], Shop)[0]
 
     assert [item.data.name for item in result.items] == [
         "アルファ新宿店",
@@ -198,11 +222,11 @@ def _fetcher_for(html: str) -> HttpxFetcher:
     return HttpxFetcher(transport=httpx.MockTransport(handler), delay=0)
 
 
-def test_large_list_page_is_sent_in_several_requests() -> None:
-    f = _fetcher_for(_list_page(25))
+def test_large_list_page_is_sent_in_several_requests(install: Install) -> None:
     jev = FakeJev({"name": "shop-name", "address": "住所"})
+    install(jev, _fetcher_for(_list_page(25)))
 
-    result = rake([f"{BASE}/many"], Shop, fetcher=f, client=jev)[0]
+    result = rake([f"{BASE}/many"], Shop)[0]
 
     assert [len(call["questions"]) for call in jev.calls] == [20 * 3, 5 * 3]
     assert len(result.items) == 25
@@ -217,22 +241,24 @@ class FailingSecondCall(FakeJev):
         return super().ask(state, questions)
 
 
-def test_failed_request_loses_only_its_own_items() -> None:
+def test_failed_request_loses_only_its_own_items(install: Install) -> None:
     jev = FailingSecondCall({"name": "shop-name", "address": "住所"})
+    install(jev, _fetcher_for(_list_page(25)))
 
-    result = rake([f"{BASE}/many"], Shop, fetcher=_fetcher_for(_list_page(25)), client=jev)[0]
+    result = rake([f"{BASE}/many"], Shop)[0]
 
     assert len(result.items) == 20
     assert result.errors == ["items 20-24: boom"]
 
 
-def test_model_validation_failure_drops_the_item() -> None:
+def test_model_validation_failure_drops_the_item(install: Install) -> None:
     class ExpensiveProduct(BaseModel):
         price: int = Field(gt=10000, description="税込の販売価格（円）")
 
     jev = FakeJev(PICKS)
+    install(jev)
 
-    result = rake([f"{BASE}/ja"], ExpensiveProduct, fetcher=fetcher(), client=jev)[0]
+    result = rake([f"{BASE}/ja"], ExpensiveProduct)[0]
 
     assert result.items == []
     assert result.errors == ["price: Input should be greater than 10000"]
@@ -249,11 +275,15 @@ class BrokenFetcher:
             raise RuntimeError("unexpected bug")
         return self.fetcher.fetch(url)
 
+    def close(self) -> None:
+        self.fetcher.close()
 
-def test_unexpected_error_on_one_page_does_not_stop_the_others() -> None:
+
+def test_unexpected_error_on_one_page_does_not_stop_the_others(install: Install) -> None:
     jev = FakeJev(PICKS)
+    install(jev, BrokenFetcher())
 
-    results = rake([f"{BASE}/broken", f"{BASE}/ja"], Product, fetcher=BrokenFetcher(), client=jev)
+    results = rake([f"{BASE}/broken", f"{BASE}/ja"], Product)
 
     assert results[0].errors == ["RuntimeError: unexpected bug"]
     assert len(results[1].items) == 1
@@ -274,17 +304,22 @@ class ClosingFetcher(HttpxFetcher):
         super().close()
 
 
-def test_default_fetcher_and_client_are_created_and_closed(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_fetcher_and_client_are_closed(monkeypatch: pytest.MonkeyPatch) -> None:
     created_fetcher = ClosingFetcher(transport=site(), delay=0)
     created_client = ClosingFakeJev(PICKS)
-    monkeypatch.setattr(api, "HttpxFetcher", lambda: created_fetcher)
+    delays: list[float] = []
+
+    def make_fetcher(delay: float) -> HttpxFetcher:
+        delays.append(delay)
+        return created_fetcher
+
+    monkeypatch.setattr(api, "HttpxFetcher", make_fetcher)
     monkeypatch.setattr(api, "TypeSafeJevClient", lambda: created_client)
 
-    results = rake([f"{BASE}/ja"], Product)
+    results = rake([f"{BASE}/ja"], Product, delay=2.5)
 
     assert len(results[0].items) == 1
+    assert delays == [2.5]
     assert created_fetcher.closed
     assert created_client.closed
 
@@ -296,13 +331,13 @@ def test_default_fetcher_and_client_are_created_and_closed(
         (httpx.ConnectError("refused"), "request failed"),
     ],
 )
-def test_fetch_errors_become_page_errors(error: Exception, message: str) -> None:
+def test_fetch_errors_become_page_errors(install: Install, error: Exception, message: str) -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         raise error
 
-    f = HttpxFetcher(transport=httpx.MockTransport(handler), delay=0)
+    install(FakeJev(PICKS), HttpxFetcher(transport=httpx.MockTransport(handler), delay=0))
 
-    result = rake([f"{BASE}/ja"], Product, fetcher=f, client=FakeJev(PICKS))[0]
+    result = rake([f"{BASE}/ja"], Product)[0]
 
     assert result.items == []
     assert message in result.errors[0]
